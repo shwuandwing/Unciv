@@ -115,4 +115,100 @@ class HexmathTests {
             Assert.assertEquals(expected, actual)
         }
     }
+
+    @Test
+    fun testHexagonAreaAndRadius() {
+        Assert.assertEquals(1, HexMath.getNumberOfTilesInHexagon(0))
+        Assert.assertEquals(7, HexMath.getNumberOfTilesInHexagon(1))
+        Assert.assertEquals(19, HexMath.getNumberOfTilesInHexagon(2))
+        Assert.assertEquals(37, HexMath.getNumberOfTilesInHexagon(3))
+        Assert.assertEquals(0, HexMath.getNumberOfTilesInHexagon(-1))
+
+        Assert.assertEquals(0f, HexMath.getHexagonalRadiusForArea(1), 0.001f)
+        Assert.assertEquals(1f, HexMath.getHexagonalRadiusForArea(7), 0.001f)
+        Assert.assertEquals(2f, HexMath.getHexagonalRadiusForArea(19), 0.001f)
+        Assert.assertEquals(3f, HexMath.getHexagonalRadiusForArea(37), 0.001f)
+        Assert.assertEquals(0f, HexMath.getHexagonalRadiusForArea(0), 0.001f)
+    }
+
+    @Test
+    fun testLatLongConversions() {
+        val coord = HexCoord.of(1, 2)
+        Assert.assertEquals(3, HexMath.getLatitude(coord))
+        Assert.assertEquals(-1, HexMath.getLongitude(coord))
+
+        val vector = HexMath.hexFromLatLong(3, -1)
+        Assert.assertEquals(1f, vector.x, 0.001f)
+        Assert.assertEquals(2f, vector.y, 0.001f)
+    }
+
+    @Test
+    fun testEquivalentSizes() {
+        val radius = 20
+        val rectSize = HexMath.getEquivalentRectangularSize(radius)
+        Assert.assertEquals(radius, HexMath.getEquivalentHexagonalRadius(rectSize.x, rectSize.y))
+    }
+
+    @Test
+    fun testDistance() {
+        val origin = HexCoord.of(0, 0)
+        Assert.assertEquals(0, HexMath.getDistance(origin, HexCoord.of(0, 0)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(1, 1)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(1, 0)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(0, 1)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(-1, -1)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(-1, 0)))
+        Assert.assertEquals(1, HexMath.getDistance(origin, HexCoord.of(0, -1)))
+
+        Assert.assertEquals(2, HexMath.getDistance(origin, HexCoord.of(1, -1)))
+        Assert.assertEquals(2, HexMath.getDistance(origin, HexCoord.of(-1, 1)))
+
+        Assert.assertEquals(7, HexMath.getDistance(HexCoord.of(1, 2), HexCoord.of(4, -2)))
+    }
+
+    @Test
+    fun testRowColumn() {
+        val origin = HexCoord.of(0, 0)
+        Assert.assertEquals(0, HexMath.getRow(origin))
+        Assert.assertEquals(0, HexMath.getColumn(origin))
+
+        val coord = HexCoord.of(1, 2)
+        Assert.assertEquals(1, HexMath.getRow(coord))
+        Assert.assertEquals(1, HexMath.getColumn(coord))
+
+        val coord2 = HexCoord.of(2, 2)
+        Assert.assertEquals(2, HexMath.getRow(coord2))
+        Assert.assertEquals(0, HexMath.getColumn(coord2))
+
+        for (row in 0..10) { // Only test positive rows where getRow is a clean inverse
+            for (col in -10..10) {
+                val c = HexMath.getTileCoordsFromColumnRow(col, row)
+                Assert.assertEquals("Column mismatch for col $col row $row", col, HexMath.getColumn(c))
+                Assert.assertEquals("Row mismatch for col $col row $row", row, HexMath.getRow(c))
+            }
+        }
+    }
+
+    @Test
+    fun testInlineHexCoord() {
+        val c = InlineHexCoord.of(10, -5)
+        Assert.assertEquals(10, c.x)
+        Assert.assertEquals(-5, c.y)
+
+        val c2 = InlineHexCoord.of(-32768, 32767)
+        Assert.assertEquals(-32768, c2.x)
+        Assert.assertEquals(32767, c2.y)
+    }
+
+    @Test
+    fun testClockPositions() {
+        Assert.assertEquals(HexCoord.of(1, 1), HexMath.getClockPositionToHexcoord(12))
+        Assert.assertEquals(HexCoord.of(1, 1), HexMath.getClockPositionToHexcoord(0))
+        Assert.assertEquals(HexCoord.of(0, 1), HexMath.getClockPositionToHexcoord(2))
+        Assert.assertEquals(HexCoord.of(-1, 0), HexMath.getClockPositionToHexcoord(4))
+        Assert.assertEquals(HexCoord.of(-1, -1), HexMath.getClockPositionToHexcoord(6))
+        Assert.assertEquals(HexCoord.of(0, -1), HexMath.getClockPositionToHexcoord(8))
+        Assert.assertEquals(HexCoord.of(1, 0), HexMath.getClockPositionToHexcoord(10))
+        Assert.assertEquals(HexCoord.Zero, HexMath.getClockPositionToHexcoord(1))
+    }
 }
