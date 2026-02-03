@@ -10,6 +10,7 @@ import yairm210.purity.annotations.Readonly
 object MapShape {
     const val rectangular = "Rectangular"
     const val hexagonal = "Hexagonal"
+    const val icosahedron = "Icosahedron"
     const val flatEarth = "Flat Earth Hexagonal"
 }
 
@@ -137,12 +138,12 @@ class MapParameters : IsPartOfGameInfoSerialization {
     fun getLegendaryStart() = legendaryStart || mapResources == MapResourceSetting.legendaryStart.label
 
     fun getArea() = when {
-        shape == MapShape.hexagonal || shape == MapShape.flatEarth -> getNumberOfTilesInHexagon(mapSize.radius)
+        shape == MapShape.hexagonal || shape == MapShape.icosahedron || shape == MapShape.flatEarth -> getNumberOfTilesInHexagon(mapSize.radius)
         worldWrap && mapSize.width % 2 != 0 -> (mapSize.width - 1) * mapSize.height
         else -> mapSize.width * mapSize.height
     }
     private fun displayMapDimensions() = mapSize.run {
-        (if (shape == MapShape.hexagonal || shape == MapShape.flatEarth) "R$radius" else "${width}x$height") +
+        (if (shape == MapShape.hexagonal || shape == MapShape.icosahedron || shape == MapShape.flatEarth) "R$radius" else "${width}x$height") +
         (if (worldWrap) "w" else "")
     }
 
@@ -177,7 +178,7 @@ class MapParameters : IsPartOfGameInfoSerialization {
 
     @Readonly
     fun numberOfTiles() =
-        if (shape == MapShape.hexagonal || shape == MapShape.flatEarth) {
+        if (shape == MapShape.hexagonal || shape == MapShape.icosahedron || shape == MapShape.flatEarth) {
             1 + 3 * mapSize.radius * (mapSize.radius - 1)
         } else {
             mapSize.width * mapSize.height
