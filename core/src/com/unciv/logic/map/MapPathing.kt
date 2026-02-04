@@ -114,7 +114,7 @@ object MapPathing {
         endTile: Tile,
         predicate: (Civilization, Tile) -> Boolean,
         cost: (Civilization, Tile, Tile) -> Float = { _, _, _ -> 1f },
-        heuristic: (Civilization, Tile, Tile) -> Float = { _, from, to -> from.aerialDistanceTo(to).toFloat() }
+        heuristic: (Civilization, Tile, Tile) -> Float = { _, from, to -> from.tileMap.topology.getHeuristicDistance(from, to) }
     ): List<Tile>? {
         val astar = AStar(
                 startTile,

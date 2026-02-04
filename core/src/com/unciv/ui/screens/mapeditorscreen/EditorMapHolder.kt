@@ -10,8 +10,9 @@ import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.actions.Actions
 import com.unciv.logic.map.HexCoord
 import com.unciv.logic.map.HexMath
-import com.unciv.logic.map.tile.Tile
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.TileMap
+import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.map.toHexCoord
 import com.unciv.ui.components.tilegroups.TileGroupMap
 import com.unciv.ui.components.tilegroups.TileGroup
@@ -225,6 +226,9 @@ class EditorMapHolder(
 
     fun getClosestTileTo(stageCoords: Vector2): Tile? {
         val positionalCoords = tileGroupMap.getPositionalVector(stageCoords)
+        if (tileMap.mapParameters.shape == MapShape.icosahedron) {
+            return tileMap.topology.getClosestTile(positionalCoords)
+        }
         val hexPosition = HexMath.world2HexCoords(positionalCoords)
         val rounded = HexMath.roundHexCoords(hexPosition)
 

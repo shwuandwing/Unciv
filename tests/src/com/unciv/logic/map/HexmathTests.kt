@@ -46,7 +46,7 @@ class HexmathTests {
 
         for (tile in tileMap.values){
             for (neighbor in tile.neighbors){
-                val index = HexMath.tilesAndNeighborUniqueIndex(tile, neighbor)
+                val index = tileMap.edgeUniqueIndex(tile, neighbor)
                 Assert.assertFalse("Duplicate coords found: $neighbor", seenCoordsMapping.contains(index))
 
                 seenCoordsMapping.add(index)

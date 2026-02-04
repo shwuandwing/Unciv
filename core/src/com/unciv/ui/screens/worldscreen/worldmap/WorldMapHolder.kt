@@ -365,12 +365,17 @@ class WorldMapHolder(
                     val targetTileSpriteSlot = tileGroups[targetTile]!!.layerUnitArt.getSpriteSlot(selectedUnit)
                     targetTileSpriteSlot?.spriteGroup?.isVisible = false
                 },
-                *pathToTile.map { tile ->
-                    Actions.moveTo(
-                        tileGroups[tile]!!.x,
-                        tileGroups[tile]!!.y,
-                        0.5f / pathToTile.size
-                    )
+                *run {
+                    var previous = previousTile
+                    pathToTile.map { tile ->
+                        val duration = if (tile.tileMap.topology.isSeamEdge(previous, tile)) 0f else 0.5f / pathToTile.size
+                        previous = tile
+                        Actions.moveTo(
+                            tileGroups[tile]!!.x,
+                            tileGroups[tile]!!.y,
+                            duration
+                        )
+                    }
                 }.toTypedArray(),
                 Actions.run {
                     // Re-enable the final tile

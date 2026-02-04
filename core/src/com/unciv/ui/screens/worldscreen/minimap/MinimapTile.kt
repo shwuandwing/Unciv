@@ -6,7 +6,6 @@ import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.utils.Align
 import com.unciv.logic.civilization.Civilization
-import com.unciv.logic.map.HexMath
 import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.map.tile.TileHistory.TileHistoryState.CityCenterType
 import com.unciv.ui.components.extensions.surroundWithCircle
@@ -25,7 +24,7 @@ class MinimapTile(val tile: Tile, tileSize: Float, val onClick: () -> Unit) {
     val isUnrevealed get() = !image.isVisible
 
     init {
-        val positionalVector = HexMath.hex2WorldCoords(tile.position)
+        val positionalVector = tile.tileMap.topology.getWorldPosition(tile)
 
         image.isVisible = false
         image.setSize(tileSize, tileSize)

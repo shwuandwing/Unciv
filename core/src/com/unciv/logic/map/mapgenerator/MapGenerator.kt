@@ -132,13 +132,22 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
 
         randomness.seedRNG(mapParameters.seed)
 
-        val map: TileMap = if (mapParameters.shape == MapShape.rectangular)
-            TileMap(mapSize.width, mapSize.height, ruleset, mapParameters.worldWrap)
-        else
-            TileMap(mapSize.radius, ruleset, mapParameters.worldWrap)
+        if (mapParameters.shape == MapShape.icosahedron) {
+            mapParameters.worldWrap = false
+            mapParameters.mirroring = MirroringType.none
+        }
+
+        val map: TileMap = when (mapParameters.shape) {
+            MapShape.rectangular -> TileMap(mapSize.width, mapSize.height, ruleset, mapParameters.worldWrap)
+            MapShape.icosahedron -> GoldbergMapBuilder.build(mapParameters, ruleset)
+            else -> TileMap(mapSize.radius, ruleset, mapParameters.worldWrap)
+        }
 
         mapParameters.createdWithVersion = UncivGame.VERSION.toSerializeString()
         map.mapParameters = mapParameters
+        if (map.tileMatrix.isEmpty()) {
+            map.setTransients(ruleset)
+        }
 
         if (mapType == MapType.empty) {
             for (tile in map.values) {
@@ -698,7 +707,7 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
         // Flat Earth needs a 1 tile wide perimeter of ice/mountain/snow and a 2 radius cluster of ice in the center.
         for (tile in tileMap.values) {
             val isCenterTile = tile.latitude == 0 && tile.longitude == 0
-            val isEdgeTile = tile.neighbors.count() < 6
+            val isEdgeTile = tileMap.topology.isEdge(tile)
 
             // Make center tiles ice or snow or mountain depending on availability
             if (isCenterTile) {
@@ -780,11 +789,11 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
 
         // Spawn partial circle of arctic tiles next to the edge
         for (neighbor in tile.neighbors) {
-            val neighborIsEdgeTile = neighbor.neighbors.count() < 6
-            // Do not redo edge tile. It is already done.
+            val neighborIsEdgeTile = tile.tileMap.topology.isEdge(neighbor)
+            // Do not redo edge tiles. They are already handled.
             // Do nothing most of the time at random.
             if (!neighborIsEdgeTile && randomness.RNG.nextDouble() >= 0.75) {
-                spawnRandomIce(tile, arcticTerrain, iceTerrains)
+                spawnRandomIce(neighbor, arcticTerrain, iceTerrains)
             }
         }
     }

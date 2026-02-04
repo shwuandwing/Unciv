@@ -370,6 +370,7 @@ object HexMath {
         return ringStart + positionInRing
     }
 
+    @Readonly
     fun tilesAndNeighborUniqueIndex(tile: Tile, neighbor: Tile): Int {
         return tile.zeroBasedIndex * 6 +  // each tile has 6 neighbors
                 tile.tileMap.getNeighborTileClockPosition(tile, neighbor) / 2 - 1 // min: 2, max: 12, step 2; Divide by 2 and it's numbers 1-6, -1 to get 0-5

@@ -81,6 +81,12 @@ class MapParameters : IsPartOfGameInfoSerialization {
     var resourceRichness = 0.1f
     var waterThreshold = 0.0f
 
+    /** Goldberg icosahedron frequency. Required when [shape] is [MapShape.icosahedron]. */
+    var goldbergFrequency = 0
+
+    /** Goldberg layout identifier. Required when [shape] is [MapShape.icosahedron]. */
+    var goldbergLayout = com.unciv.logic.map.topology.GoldbergNetLayoutBuilder.DEFAULT_LAYOUT
+
     /** Shifts temperature (after random, latitude and temperatureintensity).*/
     var temperatureShift = 0f
 
@@ -109,6 +115,8 @@ class MapParameters : IsPartOfGameInfoSerialization {
         toReturn.resourceRichness = resourceRichness
         toReturn.waterThreshold = waterThreshold
         toReturn.createdWithVersion = createdWithVersion
+        toReturn.goldbergFrequency = goldbergFrequency
+        toReturn.goldbergLayout = goldbergLayout
         return toReturn
     }
 
@@ -138,7 +146,8 @@ class MapParameters : IsPartOfGameInfoSerialization {
     fun getLegendaryStart() = legendaryStart || mapResources == MapResourceSetting.legendaryStart.label
 
     fun getArea() = when {
-        shape == MapShape.hexagonal || shape == MapShape.icosahedron || shape == MapShape.flatEarth -> getNumberOfTilesInHexagon(mapSize.radius)
+        shape == MapShape.icosahedron && goldbergFrequency > 0 -> GoldbergMath.tileCount(goldbergFrequency)
+        shape == MapShape.hexagonal || shape == MapShape.flatEarth -> getNumberOfTilesInHexagon(mapSize.radius)
         worldWrap && mapSize.width % 2 != 0 -> (mapSize.width - 1) * mapSize.height
         else -> mapSize.width * mapSize.height
     }
@@ -178,7 +187,9 @@ class MapParameters : IsPartOfGameInfoSerialization {
 
     @Readonly
     fun numberOfTiles() =
-        if (shape == MapShape.hexagonal || shape == MapShape.icosahedron || shape == MapShape.flatEarth) {
+        if (shape == MapShape.icosahedron && goldbergFrequency > 0) {
+            GoldbergMath.tileCount(goldbergFrequency)
+        } else if (shape == MapShape.hexagonal || shape == MapShape.flatEarth) {
             1 + 3 * mapSize.radius * (mapSize.radius - 1)
         } else {
             mapSize.width * mapSize.height

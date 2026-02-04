@@ -91,12 +91,20 @@ class MapRegions (val ruleset: Ruleset) {
         if (numRegions <= 0) return // Don't bother about regions, probably map editor
         if (tileMap.continentSizes.isEmpty()) throw Exception("No Continents on this map!")
 
-        val radius = if (tileMap.mapParameters.shape == MapShape.hexagonal || tileMap.mapParameters.shape == MapShape.icosahedron || tileMap.mapParameters.shape == MapShape.flatEarth)
-            tileMap.mapParameters.mapSize.radius.toFloat()
-        else
-            (max(tileMap.mapParameters.mapSize.width / 2, tileMap.mapParameters.mapSize.height / 2)).toFloat()
-        // A huge box including the entire map.
-        val mapRect = Rectangle(-radius, -radius, radius * 2 + 1, radius * 2 + 1)
+        val mapRect = if (tileMap.mapParameters.shape == MapShape.icosahedron) {
+            val minColumn = tileMap.values.minOf { it.getColumn() }.toFloat()
+            val maxColumn = tileMap.values.maxOf { it.getColumn() }.toFloat()
+            val minRow = tileMap.values.minOf { it.getRow() }.toFloat()
+            val maxRow = tileMap.values.maxOf { it.getRow() }.toFloat()
+            Rectangle(minColumn, minRow, maxColumn - minColumn + 1f, maxRow - minRow + 1f)
+        } else {
+            val radius = if (tileMap.mapParameters.shape == MapShape.hexagonal || tileMap.mapParameters.shape == MapShape.flatEarth)
+                tileMap.mapParameters.mapSize.radius.toFloat()
+            else
+                (max(tileMap.mapParameters.mapSize.width / 2, tileMap.mapParameters.mapSize.height / 2)).toFloat()
+            // A huge box including the entire map.
+            Rectangle(-radius, -radius, radius * 2 + 1, radius * 2 + 1)
+        }
 
         // Lots of small islands - just split ut the map in rectangles while ignoring Continents
         // 25% is chosen as limit so Four Corners maps don't fall in this category
