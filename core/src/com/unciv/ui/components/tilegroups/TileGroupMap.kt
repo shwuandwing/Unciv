@@ -67,7 +67,7 @@ class TileGroupMap<T: TileGroup>(
                     tileGroup.tile.tileMap.getUnwrappedPosition(tileGroup.tile.position)
                 )
             } else {
-                HexMath.hex2WorldCoords(tileGroup.tile.position)
+                tileGroup.tile.tileMap.topology.getWorldPosition(tileGroup.tile)
             }
 
             tileGroup.setPosition(

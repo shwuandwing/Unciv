@@ -111,7 +111,7 @@ class Tile : IsPartOfGameInfoSerialization {
     // This is for performance - since we access the neighbors of a tile ALL THE TIME,
     // and the neighbors of a tile never change, it's much more efficient to save the list once and for all!
     @delegate:Transient
-    val neighbors: Sequence<Tile> by lazy { getTilesAtDistance(1).toList().asSequence() }
+    val neighbors: Sequence<Tile> by lazy { tileMap.topology.getNeighbors(this).toList().asSequence() }
     // We have to .toList() so that the values are stored together once for caching,
     // and the toSequence so that aggregations (like neighbors.flatMap{it.units} don't take up their own space
 
@@ -170,9 +170,9 @@ class Tile : IsPartOfGameInfoSerialization {
     var temperature: Double? = null
 
     val latitude: Int
-        get() = HexMath.getLatitude(position)
+        get() = tileMap.topology.getLatitude(this)
     val longitude: Int
-        get() = HexMath.getLongitude(position)
+        get() = tileMap.topology.getLongitude(this)
 
     @Transient @Cache
     private var tileResourceCache: TileResource? = null
@@ -611,21 +611,7 @@ class Tile : IsPartOfGameInfoSerialization {
      */
     @Readonly
     fun aerialDistanceTo(otherTile: Tile): Int {
-        val positionHexcoord = position
-        val otherPositionHexcoord = otherTile.position
-
-        val xDelta = positionHexcoord.x - otherPositionHexcoord.x
-        val yDelta = positionHexcoord.y - otherPositionHexcoord.y
-        val distance = maxOf(abs(xDelta), abs(yDelta), abs(xDelta - yDelta))
-
-        if (!tileMap.mapParameters.worldWrap || distance <= tileMap.width / 2) return distance
-
-        val otherTileUnwrappedPos = tileMap.getUnwrappedPosition(otherPositionHexcoord)
-        val xDeltaWrapped = positionHexcoord.x - otherTileUnwrappedPos.x
-        val yDeltaWrapped = positionHexcoord.y - otherTileUnwrappedPos.y
-        val wrappedDistance = maxOf(abs(xDeltaWrapped), abs(yDeltaWrapped), abs(xDeltaWrapped - yDeltaWrapped))
-
-        return min(distance, wrappedDistance)
+        return tileMap.topology.getDistance(this, otherTile)
     }
 
     @Readonly
@@ -655,7 +641,7 @@ class Tile : IsPartOfGameInfoSerialization {
             8 -> hasBottomLeftRiver // we're to the top-right of it
             10 -> otherTile.hasBottomRightRiver // we're to the bottom-right of it
             12 -> otherTile.hasBottomRiver // we're directly below it
-            else -> throw Exception("Should never call this function on a non-neighbor!")
+            else -> false
         }
     }
 

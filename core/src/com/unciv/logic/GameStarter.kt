@@ -587,7 +587,7 @@ object GameStarter {
     private fun getFreeTiles(tileMap: TileMap, landTilesInBigEnoughGroup: Map<Tile, Float>, minimumDistanceBetweenStartingLocations: Int): MutableList<Tile> {
         return landTilesInBigEnoughGroup.asSequence()
             .filter {
-                HexMath.getDistanceFromEdge(it.key.position, tileMap.mapParameters) >=
+                tileMap.getDistanceFromEdge(it.key) >=
                     (minimumDistanceBetweenStartingLocations * 2) / 3
             }.sortedBy { it.value }
             .map { it.key }

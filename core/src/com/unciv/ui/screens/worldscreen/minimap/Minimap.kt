@@ -85,7 +85,14 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
             height = civInfo.exploredRegion.getHeight().toFloat()
             width = civInfo.exploredRegion.getWidth().toFloat()
         } else {
-            if (mapParameters.shape != MapShape.rectangular) {
+            if (mapParameters.shape == MapShape.icosahedron) {
+                val bounds = mapHolder.tileMap.topology.getWorldBounds()
+                val padding = 1f
+                return min(
+                    minimapSize.x / ((bounds.width + padding) * 0.5f),
+                    minimapSize.y / ((bounds.height + padding) * 0.5f)
+                )
+            } else if (mapParameters.shape != MapShape.rectangular) {
                 val diameter = mapParameters.mapSize.radius * 2f + 1f
                 height = diameter
                 width = diameter
@@ -145,7 +152,12 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         var width: Float
         val mapParameters = mapHolder.tileMap.mapParameters
 
-        if (mapParameters.shape != MapShape.rectangular) {
+        if (mapParameters.shape == MapShape.icosahedron) {
+            val bounds = mapHolder.tileMap.topology.getWorldBounds()
+            width = (bounds.width + 1f) * minimapTileSize * 0.5f
+            height = (bounds.height + 1f) * minimapTileSize * 0.5f
+            return Vector2(width, height)
+        } else if (mapParameters.shape != MapShape.rectangular) {
             val diameter = mapParameters.mapSize.radius * 2f + 1f
             height = diameter
             width = diameter
@@ -177,10 +189,11 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
 
     private fun createMinimapTiles(tileSize: Float): List<MinimapTile> {
         val tiles = ArrayList<MinimapTile>()
-        val pad = if (mapHolder.tileMap.mapParameters.shape != MapShape.rectangular)
-            mapHolder.tileMap.mapParameters.mapSize.radius * tileSize * 1.5f
-        else
-            (mapHolder.tileMap.mapParameters.mapSize.width - 1f) * tileSize * 0.75f
+        val pad = when (mapHolder.tileMap.mapParameters.shape) {
+            MapShape.icosahedron -> 0f
+            MapShape.rectangular -> (mapHolder.tileMap.mapParameters.mapSize.width - 1f) * tileSize * 0.75f
+            else -> mapHolder.tileMap.mapParameters.mapSize.radius * tileSize * 1.5f
+        }
         val leftSide =
                 if (civInfo != null) civInfo.exploredRegion.getMinimapLeft(tileSize) else -Float.MAX_VALUE
         for (tileInfo in mapHolder.tileMap.values) {

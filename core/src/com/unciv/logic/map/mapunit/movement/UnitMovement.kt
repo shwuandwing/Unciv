@@ -74,7 +74,7 @@ class UnitMovement(val unit: MapUnit) {
                         // You need to assume his tile is reachable, otherwise all movement algorithms on reaching enemy
                         // cities and units goes kaput.
                         else -> {
-                            val key = HexMath.tilesAndNeighborUniqueIndex(tileToCheck, neighbor)
+                            val key = tileToCheck.tileMap.edgeUniqueIndex(tileToCheck, neighbor)
                             val movementCost = movementCostCache.getOrPut(key) {
                                 MovementCost.getMovementCostBetweenAdjacentTilesEscort(unit, tileToCheck, neighbor, considerZoneOfControl, includeOtherEscortUnit)
                             }

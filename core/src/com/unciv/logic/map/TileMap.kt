@@ -8,6 +8,10 @@ import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.mapgenerator.MapLandmassGenerator
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
+import com.unciv.logic.map.topology.GoldbergNetLayoutBuilder
+import com.unciv.logic.map.topology.GoldbergTopology
+import com.unciv.logic.map.topology.HexTopology
+import com.unciv.logic.map.topology.MapTopology
 import com.unciv.models.metadata.Player
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.nation.Nation
@@ -96,6 +100,9 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
     @Transient var bottomY = 0
     @Transient var width = 0
 
+    @Transient
+    lateinit var topology: MapTopology
+
     @delegate:Transient
     val maxLatitude: Int by lazy { if (values.isEmpty()) 0 else values.maxOf { abs(it.latitude) } }
 
@@ -161,6 +168,7 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
     constructor(radius: Int, ruleset: Ruleset, worldWrap: Boolean = false)
             : this (HexMath.getNumberOfTilesInHexagon(radius)) {
         startingLocations.clear()
+        mapParameters.worldWrap = worldWrap
         val firstAvailableLandTerrain = MapLandmassGenerator.getInitializationTerrain(ruleset, TerrainType.Land)
         for (vector in HexMath.getHexCoordsInDistance(HexCoord.Zero, radius, worldWrap))
             tileList.add(Tile().apply { position = vector.asSerializable(); baseTerrain = firstAvailableLandTerrain })
@@ -171,6 +179,8 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
     constructor(width: Int, height: Int, ruleset: Ruleset, worldWrap: Boolean = false)
             : this(width * height) {
         startingLocations.clear()
+        mapParameters.worldWrap = worldWrap
+        mapParameters.shape = MapShape.rectangular
         val firstAvailableLandTerrain = MapLandmassGenerator.getInitializationTerrain(ruleset, TerrainType.Land)
 
         // world-wrap maps must always have an even width, so round down
@@ -246,35 +256,10 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
     fun getTilesAtDistance(origin: HexCoord, distance: Int): Sequence<Tile> =
             if (distance <= 0) // silently take negatives.
                 sequenceOf(get(origin))
-            else
-                sequence {
-                    val centerX = origin.x
-                    val centerY = origin.y
-
-                    // Start from 6 O'clock point which means (-distance, -distance) away from the center point
-                    var currentX = centerX - distance
-                    var currentY = centerY - distance
-
-                    for (i in 0 until distance) { // From 6 to 8
-                        yield(getIfTileExistsOrNull(currentX, currentY))
-                        // We want to get the tile on the other side of the clock,
-                        // so if we're at current = origin-delta we want to get to origin+delta.
-                        // The simplest way to do this is 2*origin - current = 2*origin- (origin - delta) = origin+delta
-                        yield(getIfTileExistsOrNull(2 * centerX - currentX, 2 * centerY - currentY))
-                        currentX += 1 // we're going upwards to the left, towards 8 o'clock
-                    }
-                    for (i in 0 until distance) { // 8 to 10
-                        yield(getIfTileExistsOrNull(currentX, currentY))
-                        yield(getIfTileExistsOrNull(2 * centerX - currentX, 2 * centerY - currentY))
-                        currentX += 1
-                        currentY += 1 // we're going up the left side of the hexagon so we're going "up" - +1,+1
-                    }
-                    for (i in 0 until distance) { // 10 to 12
-                        yield(getIfTileExistsOrNull(currentX, currentY))
-                        yield(getIfTileExistsOrNull(2 * centerX - currentX, 2 * centerY - currentY))
-                        currentY += 1 // we're going up the top left side of the hexagon so we're heading "up and to the right"
-                    }
-                }.filterNotNull()
+            else {
+                val originTile = getIfTileExistsOrNull(origin.x, origin.y) ?: return emptySequence()
+                topology.getTilesAtDistance(originTile, distance)
+            }
 
     /** @return all tiles within [rectangle], respecting world edges and wrap.
      *  The rectangle will be "straight" ie parallel with rectangular map edges. */
@@ -325,6 +310,7 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
         val radius = if (mapParameters.shape == MapShape.rectangular)
             mapParameters.mapSize.width / 2
         else mapParameters.mapSize.radius
+        val wrap = mapParameters.worldWrap
         val x1 = tile.position.x
         val y1 = tile.position.y
         val x2 = otherTile.position.x
@@ -332,10 +318,10 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
 
         val xDifference = x1 - x2
         val yDifference = y1 - y2
-        val xWrapDifferenceBottom = if (radius < 3) 0 else x1 - (x2 - radius)
-        val yWrapDifferenceBottom = if (radius < 3) 0 else y1 - (y2 - radius)
-        val xWrapDifferenceTop = if (radius < 3) 0 else x1 - (x2 + radius)
-        val yWrapDifferenceTop = if (radius < 3) 0 else y1 - (y2 + radius)
+        val xWrapDifferenceBottom = if (!wrap || radius < 3) 0 else x1 - (x2 - radius)
+        val yWrapDifferenceBottom = if (!wrap || radius < 3) 0 else y1 - (y2 - radius)
+        val xWrapDifferenceTop = if (!wrap || radius < 3) 0 else x1 - (x2 + radius)
+        val yWrapDifferenceTop = if (!wrap || radius < 3) 0 else y1 - (y2 + radius)
 
         return when {
             xDifference == 1 && yDifference == 1 -> 6 // otherTile is below
@@ -517,8 +503,10 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
         } else {
             // Yes the map generator calls this repeatedly, and we don't want to end up with an oversized tileMatrix
             // rightX is between -leftX - 1 (e.g. 105x90 map thanks @ravignir) and -leftX + 2
-            check(tileMatrix.size in (- 2 * leftX)..(3 - 2 * leftX)) {
-                "TileMap.setTransients called on existing tileMatrix of different size"
+            if (mapParameters.shape != MapShape.icosahedron) {
+                check(tileMatrix.size in (- 2 * leftX)..(3 - 2 * leftX)) {
+                    "TileMap.setTransients called on existing tileMatrix of different size"
+                }
             }
         }
 
@@ -526,14 +514,26 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
             tileMatrix[tileInfo.position.x - leftX][tileInfo.position.y - bottomY] = tileInfo
         }
         for ((index, tileInfo) in values.withIndex()) {
+            tileInfo.tileMap = this
+            tileInfo.zeroBasedIndex = index
+            tileInfo.ruleset = this.ruleset!!
+        }
+
+        topology = when (mapParameters.shape) {
+            MapShape.icosahedron -> {
+                val frequency = mapParameters.goldbergFrequency
+                require(frequency > 0) { "Goldberg frequency missing for icosahedron map" }
+                GoldbergTopology(this, frequency, mapParameters.goldbergLayout.ifEmpty { GoldbergNetLayoutBuilder.DEFAULT_LAYOUT })
+            }
+            else -> HexTopology(this)
+        }
+
+        for (tileInfo in values) {
             // Do ***NOT*** call Tile.setTerrainTransients before the tileMatrix is complete -
             // setting transients might trigger the neighbors lazy (e.g. thanks to convertHillToTerrainFeature).
             // When that lazy runs, some directions might be omitted because getIfTileExistsOrNull
             // looks at tileMatrix. Thus filling Tiles into tileMatrix and setting their
             // transients in the same loop will leave incomplete cached `neighbors`.
-            tileInfo.tileMap = this
-            tileInfo.zeroBasedIndex = index
-            tileInfo.ruleset = this.ruleset!!
             tileInfo.setTerrainTransients()
             tileInfo.setUnitTransients(setUnitCivTransients)
         }
@@ -542,6 +542,13 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
         val maxColumn = tileList.asSequence().map { HexMath.getColumn(it.position) }.max()
         width = maxColumn - minColumn + 1
     }
+
+    fun edgeUniqueIndex(tile: Tile, neighbor: Tile): Int = topology.edgeUniqueIndex(tile, neighbor)
+
+    @Readonly
+    fun getDistanceFromEdge(tile: Tile): Int =
+        if (mapParameters.shape == MapShape.icosahedron) Int.MAX_VALUE
+        else HexMath.getDistanceFromEdge(tile.position, mapParameters)
 
     /** Initialize Civilization.neutralRoads based on Tile.roadOwner
      *  - which Civ owns roads on which neutral tiles */
