@@ -55,7 +55,9 @@ class MapElevationGenerator(
         val exponent = 1.0 - tileMap.mapParameters.elevationExponent.toDouble()
         fun Double.powSigned(exponent: Double) = abs(this).pow(exponent) * sign(this)
 
-        tileMap.setTransients(ruleset)
+        if (tileMap.tileMatrix.isEmpty()) {
+            tileMap.setTransients(ruleset)
+        }
 
         for (tile in tileMap.values) {
             if (tile.isWater) continue

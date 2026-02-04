@@ -34,7 +34,7 @@ class MapGenerationRandomness {
         lacunarity: Double = 2.0,
         scale: Double = 30.0
     ): Double {
-        val worldCoords = HexMath.hex2WorldCoords(tile.position)
+        val worldCoords = tile.tileMap.topology.getWorldPosition(tile)
         return Perlin.noise3d(worldCoords.x.toDouble(), worldCoords.y.toDouble(), seed, nOctaves, persistence, lacunarity, scale)
     }
 

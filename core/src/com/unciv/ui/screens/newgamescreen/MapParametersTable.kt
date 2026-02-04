@@ -269,6 +269,15 @@ class MapParametersTable(
         else
             mapParameters.mapSize = MapSize(worldSizeSelectBox.selected.value)
 
+        if (::worldWrapCheckbox.isInitialized) {
+            val disableWrap = mapParameters.shape == MapShape.icosahedron
+            worldWrapCheckbox.isDisabled = disableWrap
+            if (disableWrap) {
+                worldWrapCheckbox.isChecked = false
+                mapParameters.worldWrap = false
+            }
+        }
+
         sizeChangedCallback?.invoke()
     }
 

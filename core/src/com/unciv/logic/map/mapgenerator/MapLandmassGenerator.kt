@@ -66,7 +66,7 @@ class MapLandmassGenerator(
     private fun generateFlatEarthExtraWater() {
         for (tile in tileMap.values) {
             val isCenterTile = tile.latitude == 0 && tile.longitude == 0
-            val isEdgeTile = tile.neighbors.count() < 6
+            val isEdgeTile = tileMap.topology.isEdge(tile)
 
             if (!isCenterTile && !isEdgeTile) continue
 
@@ -436,7 +436,7 @@ class MapLandmassGenerator(
                                      persistence: Double = 0.5,
                                      lacunarity: Double = 2.0,
                                      scale: Double = 10.0): Double {
-        val worldCoords = HexMath.hex2WorldCoords(tile.position)
+        val worldCoords = tile.tileMap.topology.getWorldPosition(tile)
         return Perlin.ridgedNoise3d(worldCoords.x.toDouble(), worldCoords.y.toDouble(), seed, nOctaves, persistence, lacunarity, scale)
     }
     
