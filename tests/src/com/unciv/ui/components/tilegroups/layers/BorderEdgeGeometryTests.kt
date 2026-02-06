@@ -42,7 +42,7 @@ class BorderEdgeGeometryTests {
     }
 
     @Test
-    fun firstRingBorderEdgesExcludeCityCenterAndFaceBoundaryNeighbor() {
+    fun firstRingBorderEdgesExcludeCityCenterAndUseExpectedAngleConventions() {
         val ownedRingTiles = cityCenter.neighbors.filter { it.getOwner() == civ }.toList()
         assertEquals(6, ownedRingTiles.size)
 
@@ -55,15 +55,30 @@ class BorderEdgeGeometryTests {
             )
 
             for (neighbor in borderNeighbors) {
-                val angleDirection = getWorldDirection(ownedTile, neighbor)
+                val tileWorldPosition = tileMap.topology.getWorldPosition(ownedTile)
+                val neighborWorldPosition = tileMap.topology.getWorldPosition(neighbor)
+                val tileToNeighborWorldDirection = Vector2(
+                    neighborWorldPosition.x - tileWorldPosition.x,
+                    neighborWorldPosition.y - tileWorldPosition.y
+                )
+                val mainMapAngleDirection = BorderEdgeGeometry.mainMapIcosaAngleDirection(
+                    tileWorldPosition,
+                    neighborWorldPosition
+                )
                 val renderDirection = tileMap.getNeighborTilePositionAsWorldCoords(ownedTile, neighbor)
+                assertTrue("Main-map angle direction must be non-zero", !mainMapAngleDirection.isZero)
                 assertTrue(
-                    "Border segment should face its boundary neighbor, not inward",
-                    BorderEdgeGeometry.isSegmentFacingNeighbor(
-                        angleDirection = angleDirection,
-                        neighborDirectionInRenderSpace = renderDirection,
-                        baseImageRotationDegrees = 30f
-                    )
+                    "Main-map angle direction should be opposite of tile->neighbor direction",
+                    mainMapAngleDirection.dot(tileToNeighborWorldDirection) < 0f
+                )
+                val mainMapAngle = BorderEdgeGeometry.borderAngleDegrees(mainMapAngleDirection)
+                val minimapStyleAngle = BorderEdgeGeometry.borderAngleDegrees(tileToNeighborWorldDirection)
+                val angleDifference = normalizeDegrees(mainMapAngle - minimapStyleAngle)
+                assertEquals(
+                    "Main-map vs minimap-style angle should differ by 180 degrees on icosa",
+                    180f,
+                    kotlin.math.abs(angleDifference),
+                    0.001f
                 )
 
                 val offset = BorderEdgeGeometry.getOffsetTowardsNeighbor(renderDirection, 1f)
@@ -81,12 +96,6 @@ class BorderEdgeGeometryTests {
         return tileOwner != null && tileOwner != neighborOwner
     }
 
-    private fun getWorldDirection(from: Tile, to: Tile): Vector2 {
-        val fromWorld = tileMap.topology.getWorldPosition(from)
-        val toWorld = tileMap.topology.getWorldPosition(to)
-        return Vector2(toWorld.x - fromWorld.x, toWorld.y - fromWorld.y)
-    }
-
     private fun makeIcosahedronMap(testGame: TestGame, frequency: Int): TileMap {
         val mapParameters = MapParameters().apply {
             shape = MapShape.icosahedron
@@ -96,5 +105,12 @@ class BorderEdgeGeometryTests {
         map.gameInfo = testGame.gameInfo
         testGame.gameInfo.tileMap = map
         return map
+    }
+
+    private fun normalizeDegrees(value: Float): Float {
+        var result = value % 360f
+        if (result <= -180f) result += 360f
+        if (result > 180f) result -= 360f
+        return result
     }
 }

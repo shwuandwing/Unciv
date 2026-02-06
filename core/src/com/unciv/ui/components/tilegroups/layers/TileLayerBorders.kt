@@ -160,11 +160,12 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
                 }
 
                 val relativeWorldPosition = if (tile.tileMap.mapParameters.shape == MapShape.icosahedron) {
-                    // Border images are already rotated with the icosahedron tile sprite.
-                    // Use topology world-space direction here to avoid applying the 30deg render rotation twice.
+                    // Border sprite orientation follows legacy clock vectors, which point
+                    // from neighbor back to this tile for border-angle purposes.
+                    // Keep that convention for icosa to avoid mirrored/opposite edges.
                     val fromPos = tile.tileMap.topology.getWorldPosition(tile)
                     val toPos = tile.tileMap.topology.getWorldPosition(neighbor)
-                    Vector2(toPos.x - fromPos.x, toPos.y - fromPos.y)
+                    BorderEdgeGeometry.mainMapIcosaAngleDirection(fromPos, toPos)
                 } else {
                     tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
                 }
