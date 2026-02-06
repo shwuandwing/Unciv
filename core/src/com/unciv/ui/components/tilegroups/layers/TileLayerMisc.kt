@@ -9,6 +9,7 @@ import com.badlogic.gdx.utils.Align
 import com.unciv.UncivGame
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.HexMath
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.map.toHexCoord
 import com.unciv.models.ruleset.unique.LocalUniqueCache
@@ -257,12 +258,18 @@ class TileLayerMisc(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup, si
 
         for (arrowToAdd in arrowsToDraw) {
             val targetTile = arrowToAdd.targetTile
-            var targetPos = Vector2(targetTile.position.toVector2())
-            if (tile.tileMap.mapParameters.worldWrap)
-                targetPos = HexMath.getUnwrappedNearestTo(targetPos.toHexCoord(),
-                    tile.position, tile.tileMap.maxLongitude)
-            val targetRelative = HexMath.hex2WorldCoords(targetPos.toHexCoord())
-                .sub(HexMath.hex2WorldCoords(tile.position))
+            val targetRelative =
+                if (tile.tileMap.mapParameters.shape == MapShape.icosahedron) {
+                    tile.tileMap.getWorldPositionForRendering(targetTile)
+                        .sub(tile.tileMap.getWorldPositionForRendering(tile))
+                } else {
+                    var targetPos = Vector2(targetTile.position.toVector2())
+                    if (tile.tileMap.mapParameters.worldWrap)
+                        targetPos = HexMath.getUnwrappedNearestTo(targetPos.toHexCoord(),
+                            tile.position, tile.tileMap.maxLongitude)
+                    HexMath.hex2WorldCoords(targetPos.toHexCoord())
+                        .sub(HexMath.hex2WorldCoords(tile.position))
+                }
 
             val targetDistance = sqrt(targetRelative.x.pow(2) + targetRelative.y.pow(2))
             val targetAngle = atan2(targetRelative.y, targetRelative.x)

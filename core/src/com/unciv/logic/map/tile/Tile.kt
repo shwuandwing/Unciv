@@ -96,6 +96,10 @@ class Tile : IsPartOfGameInfoSerialization {
     @Transient
     lateinit var tileMap: TileMap
 
+    @Readonly
+    fun hasTileMap(): Boolean = ::tileMap.isInitialized
+
+
     @Transient
     var zeroBasedIndex: Int = 0
 
@@ -1085,13 +1089,15 @@ class Tile : IsPartOfGameInfoSerialization {
     fun setExplored(player: Civilization, isExplored: Boolean, explorerPosition: HexCoord? = null) {
         if (isExplored) {
             // Disable the undo button if a new tile has been explored
+            var isNewlyExplored = false
             if (!exploredBy.contains(player.civID)) {
                 GUI.clearUndoCheckpoints()
                 exploredBy = exploredBy.withItem(player.civID)
+                isNewlyExplored = true
             }
 
-            if (player.playerType == PlayerType.Human)
-                player.exploredRegion.checkTilePosition(position, explorerPosition)
+            if (isNewlyExplored && player.playerType == PlayerType.Human)
+                player.exploredRegion.checkTilePosition(position, explorerPosition, player)
         } else {
             exploredBy = exploredBy.withoutItem(player.civID)
         }

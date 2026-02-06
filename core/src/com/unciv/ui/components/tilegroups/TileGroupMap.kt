@@ -58,16 +58,18 @@ class TileGroupMap<T: TileGroup>(
     private var drawBottomX = 0f
 
     private var maxVisibleMapWidth = 0f
+    private var coordinateTileMap: TileMap? = null
 
     init {
 
         for (tileGroup in tileGroups) {
+            if (coordinateTileMap == null) coordinateTileMap = tileGroup.tile.tileMap
             val positionalVector = if (tileGroupsToUnwrap?.contains(tileGroup) == true) {
-                HexMath.hex2WorldCoords(
+                tileGroup.tile.tileMap.worldToRenderCoords(HexMath.hex2WorldCoords(
                     tileGroup.tile.tileMap.getUnwrappedPosition(tileGroup.tile.position)
-                )
+                ))
             } else {
-                tileGroup.tile.tileMap.topology.getWorldPosition(tileGroup.tile)
+                tileGroup.tile.tileMap.getWorldPositionForRendering(tileGroup.tile)
             }
 
             tileGroup.setPosition(
@@ -166,10 +168,11 @@ class TileGroupMap<T: TileGroup>(
      */
     fun getPositionalVector(stageCoords: Vector2): Vector2 {
         val trueGroupSize = 0.8f * groupSize
-        return Vector2(bottomX, bottomY)
+        val renderCoords = Vector2(bottomX, bottomY)
             .add(stageCoords)
             .sub(groupSize / 2f, groupSize / 2f)
             .scl(1f / trueGroupSize)
+        return coordinateTileMap?.renderToWorldCoords(renderCoords) ?: renderCoords
     }
 
     override fun act(delta: Float) {

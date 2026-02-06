@@ -24,6 +24,8 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
     private val maxEdgeChord = mesh.edgeMaxChord
 
     private val seamEdges: Array<MutableSet<Int>>
+    private val primaryFaceByIndex: IntArray
+    private val faceLabelTileByFace: IntArray
 
     init {
         val tileCount = tileMap.tileList.size
@@ -35,6 +37,8 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
         longitudes = IntArray(mesh.vertices.size)
         worldPositions = Array(mesh.vertices.size) { Vector2() }
         seamEdges = Array(mesh.vertices.size) { LinkedHashSet() }
+        primaryFaceByIndex = IntArray(mesh.vertices.size)
+        faceLabelTileByFace = IntArray(mesh.faces.size) { -1 }
 
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
@@ -73,6 +77,12 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
                 }
             }
         }
+
+        for (i in mesh.vertexFaces.indices) {
+            val faces = mesh.vertexFaces[i]
+            primaryFaceByIndex[i] = faces.minOrNull() ?: -1
+        }
+        computeFaceLabelTiles()
     }
 
     override fun getNeighbors(tile: Tile): Sequence<Tile> = sequence {
@@ -156,6 +166,25 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
     }
 
     @Readonly
+    fun getFaceMembershipForDebug(tile: Tile): IntArray = mesh.vertexFaces[tile.zeroBasedIndex]
+
+    @Readonly
+    fun getPrimaryFaceForDebug(tile: Tile): Int {
+        @LocalState val local = primaryFaceByIndex
+        return local[tile.zeroBasedIndex]
+    }
+
+    @Readonly
+    fun isFaceBoundaryForDebug(from: Tile, to: Tile): Boolean =
+        getPrimaryFaceForDebug(from) != getPrimaryFaceForDebug(to)
+
+    @Readonly
+    fun getFaceLabelTileForDebug(face: Int): Int {
+        @LocalState val local = faceLabelTileByFace
+        return if (face in local.indices) local[face] else -1
+    }
+
+    @Readonly
     private fun bfsDistance(start: Int, target: Int): Int {
         if (start == target) return 0
         val size = mesh.neighbors.size
@@ -211,5 +240,48 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
             }
         }
         return ring
+    }
+
+    private fun computeFaceLabelTiles() {
+        for (face in mesh.faces.indices) {
+            val candidates = ArrayList<Int>()
+            for (index in primaryFaceByIndex.indices) {
+                if (primaryFaceByIndex[index] == face) candidates.add(index)
+            }
+            if (candidates.isEmpty()) continue
+
+            var centerX = 0f
+            var centerY = 0f
+            for (index in candidates) {
+                val pos = worldPositions[index]
+                centerX += pos.x
+                centerY += pos.y
+            }
+            centerX /= candidates.size
+            centerY /= candidates.size
+
+            var bestIndex = candidates.first()
+            var bestSameFaceNeighbors = -1
+            var bestCenterDist = Float.MAX_VALUE
+            for (index in candidates) {
+                var sameFaceNeighbors = 0
+                for (neighbor in mesh.neighbors[index]) {
+                    if (primaryFaceByIndex[neighbor] == face) sameFaceNeighbors++
+                }
+                val pos = worldPositions[index]
+                val dx = pos.x - centerX
+                val dy = pos.y - centerY
+                val centerDist = dx * dx + dy * dy
+                if (sameFaceNeighbors > bestSameFaceNeighbors ||
+                    (sameFaceNeighbors == bestSameFaceNeighbors && centerDist < bestCenterDist) ||
+                    (sameFaceNeighbors == bestSameFaceNeighbors && centerDist == bestCenterDist && index < bestIndex)
+                ) {
+                    bestIndex = index
+                    bestSameFaceNeighbors = sameFaceNeighbors
+                    bestCenterDist = centerDist
+                }
+            }
+            faceLabelTileByFace[face] = bestIndex
+        }
     }
 }
