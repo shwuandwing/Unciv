@@ -15,6 +15,10 @@ class GlobeCameraController(
     var rotationSensitivity: Float = 0.33f,
     var zoomSensitivity: Float = 0.12f
 ) {
+    private val defaultYawDegrees = yawDegrees
+    private val defaultPitchDegrees = pitchDegrees
+    private val defaultDistance = distance
+
     fun rotateBy(deltaX: Float, deltaY: Float) {
         yawDegrees -= deltaX * rotationSensitivity
         pitchDegrees = (pitchDegrees + deltaY * rotationSensitivity).coerceIn(-85f, 85f)
@@ -40,5 +44,11 @@ class GlobeCameraController(
         camera.near = 0.1f
         camera.far = 30f
         camera.update(true)
+    }
+
+    fun resetToNorth() {
+        yawDegrees = defaultYawDegrees
+        pitchDegrees = defaultPitchDegrees
+        distance = defaultDistance
     }
 }

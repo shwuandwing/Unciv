@@ -100,6 +100,10 @@ class IcosaGlobeActor(
         drawOrder.clear()
     }
 
+    fun resetToNorth() {
+        cameraController.resetToNorth()
+    }
+
     override fun draw(batch: Batch, parentAlpha: Float) {
         refreshTileMap()
         projectTiles()
