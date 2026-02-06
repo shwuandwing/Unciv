@@ -53,7 +53,6 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
 
     @Transient
     private var lastStageMapMaxY = Float.NaN
-
     // Rectangle for positioning the camera viewport on the minimap
     @Transient
     private val exploredRectangle = Rectangle()
@@ -123,7 +122,6 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
             calculateStageCoords(mapMaxX, mapMaxY)
         }
     }
-
     @Readonly
     private fun getExploredCoord(tilePosition: HexCoord): Vector2 {
         val localMap = tileMap

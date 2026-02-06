@@ -80,6 +80,16 @@ class BorderEdgeGeometryTests {
                     kotlin.math.abs(angleDifference),
                     0.001f
                 )
+                val angleDirection = getWorldDirection(ownedTile, neighbor)
+                val renderDirection = tileMap.getNeighborTilePositionAsWorldCoords(ownedTile, neighbor)
+                assertTrue(
+                    "Border segment should face its boundary neighbor, not inward",
+                    BorderEdgeGeometry.isSegmentFacingNeighbor(
+                        angleDirection = angleDirection,
+                        neighborDirectionInRenderSpace = renderDirection,
+                        baseImageRotationDegrees = 30f
+                    )
+                )
 
                 val offset = BorderEdgeGeometry.getOffsetTowardsNeighbor(renderDirection, 1f)
                 assertTrue(
@@ -96,6 +106,11 @@ class BorderEdgeGeometryTests {
         return tileOwner != null && tileOwner != neighborOwner
     }
 
+    private fun getWorldDirection(from: Tile, to: Tile): Vector2 {
+        val fromWorld = tileMap.topology.getWorldPosition(from)
+        val toWorld = tileMap.topology.getWorldPosition(to)
+        return Vector2(toWorld.x - fromWorld.x, toWorld.y - fromWorld.y)
+    }
     private fun makeIcosahedronMap(testGame: TestGame, frequency: Int): TileMap {
         val mapParameters = MapParameters().apply {
             shape = MapShape.icosahedron

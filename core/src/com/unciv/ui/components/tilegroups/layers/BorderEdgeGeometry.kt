@@ -31,7 +31,6 @@ object BorderEdgeGeometry {
             tileWorldPosition.y - neighborWorldPosition.y
         )
     }
-
     fun isSegmentFacingNeighbor(
         angleDirection: Vector2,
         neighborDirectionInRenderSpace: Vector2,

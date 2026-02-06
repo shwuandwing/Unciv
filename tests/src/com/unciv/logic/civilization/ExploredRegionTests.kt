@@ -195,7 +195,6 @@ class ExploredRegionTests {
         assertTrue(kotlin.math.abs(region.getTopY() - topBefore) > 0.0001f)
         assertTrue(kotlin.math.abs(region.getBottomY() - bottomBefore) > 0.0001f)
     }
-
     private fun minimalCircularWidth(values: List<Float>, period: Float): Float {
         if (values.isEmpty()) return 0f
         if (values.size == 1 || period <= 0f) return 0f

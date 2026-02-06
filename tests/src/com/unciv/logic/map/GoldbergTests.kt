@@ -265,7 +265,6 @@ class GoldbergTests {
             (northAverage - southAverage) > 20_000.0
         )
     }
-
     private fun normalizeAngle(angle: Float): Float {
         var normalized = angle
         val pi = Math.PI.toFloat()
