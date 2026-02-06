@@ -74,7 +74,6 @@ class MapGeneratorLandmassTests {
         assertTrue("Landmass step Two Continents on icosa should include water (min ratio=$min, all=$waterPercents)", min > 0.02f)
         assertTrue("Landmass step Two Continents on icosa should include land (max ratio=$max, all=$waterPercents)", max < 0.98f)
     }
-
     @Test
     fun threeContinentsIcosahedronHasThreeMajorContinentsInFullGeneration() {
         val testGame = TestGame()
