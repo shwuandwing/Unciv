@@ -8,8 +8,10 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.Touchable
+import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
+import com.badlogic.gdx.utils.Align
 import com.unciv.UncivGame
 import com.unciv.logic.files.MapSaver
 import com.unciv.logic.map.MapParameters
@@ -27,11 +29,16 @@ import com.unciv.ui.components.input.KeyCharAndCode
 import com.unciv.ui.components.input.KeyShortcutDispatcherVeto
 import com.unciv.ui.components.input.KeyboardPanningListener
 import com.unciv.ui.components.input.onChange
+import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.tilegroups.TileGroup
+import com.unciv.ui.components.extensions.toTextButton
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.images.ImageWithCustomSize
 import com.unciv.ui.popups.ConfirmPopup
 import com.unciv.ui.popups.ToastPopup
+import com.unciv.ui.render.globe.IcosaGlobeActor
+import com.unciv.ui.render.globe.IcosaRenderMode
+import com.unciv.ui.render.globe.IcosaRenderModePolicy
 import com.unciv.ui.screens.basescreen.BaseScreen
 import com.unciv.ui.screens.basescreen.RecreateOnResize
 import com.unciv.ui.screens.mapeditorscreen.tabs.MapEditorOptionsTab
@@ -86,6 +93,12 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
     // UI
     var mapHolder: EditorMapHolder
     val tabs: MapEditorMainTabs
+    private val toolsDrawer: MapEditorToolsDrawer
+    private val renderModeToggle = Table(skin)
+    private val map2DButton = "2D".toTextButton()
+    private val map3DButton = "3D".toTextButton()
+    private var globeActor: IcosaGlobeActor? = null
+    private var requestedRenderMode = IcosaRenderMode.TwoD
     var tileClickHandler: ((tile: Tile)->Unit)? = null
     private var zoomController: ZoomButtonPair? = null
     val descriptionTextField = UncivTextField("Enter a description for the users of this map")
@@ -112,12 +125,16 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         descriptionTextField.onChange { isDirty = true }
 
         tabs = MapEditorMainTabs(this)
-        MapEditorToolsDrawer(tabs, stage, mapHolder)
+        toolsDrawer = MapEditorToolsDrawer(tabs, stage, mapHolder)
+        addRenderModeToggle()
+        refreshRenderModeState()
 
         // The top level pager assigns its own key bindings, but making nested TabbedPagers bind keys
         // so all levels select to show the tab in question is too complex. Sub-Tabs need to maintain
         // the key binding here and the used key in their `addPage`s again for the tooltips.
-        fun selectGeneratePage(index: Int) { tabs.run { selectPage(1); generate.selectPage(index) } }
+        fun selectGeneratePage(index: Int) {
+            if (!isEditorReadOnly()) tabs.run { selectPage(1); generate.selectPage(index) }
+        }
         globalShortcuts.add(KeyCharAndCode.ctrl('n')) { selectGeneratePage(0) }
         globalShortcuts.add(KeyCharAndCode.ctrl('g')) { selectGeneratePage(1) }
         globalShortcuts.add(KeyCharAndCode.BACK) { closeEditor() }
@@ -194,6 +211,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         actionWhileRemoved()
         mapHolder = newMapHolder()
         mapHolder.zoom(savedScale)
+        refreshRenderModeState()
     }
 
     private fun newMapHolder(): EditorMapHolder {
@@ -233,6 +251,8 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
             stage.addActor(zoomController)
         }
 
+        rebuildGlobeActor()
+
         return newHolder
     }
 
@@ -258,6 +278,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         isDirty = false
         Gdx.input.inputProcessor = stage
         tabs.selectPage(selectPage)  // must be done _after_ resetting inputProcessor!
+        refreshRenderModeState()
     }
 
     fun getMapCloneForSave() =
@@ -318,7 +339,78 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
 
     override fun dispose() {
         cancelJobs()
+        globeActor?.dispose()
         super.dispose()
+    }
+
+    private fun addRenderModeToggle() {
+        renderModeToggle.defaults().pad(2f)
+        renderModeToggle.background = BaseScreen.skinStrings.getUiBackground(
+            "MapEditor/RenderModeToggle",
+            tintColor = Color(0.1f, 0.1f, 0.16f, 0.82f)
+        )
+        map2DButton.onClick {
+            requestedRenderMode = IcosaRenderMode.TwoD
+            refreshRenderModeState()
+        }
+        map3DButton.onClick {
+            requestedRenderMode = IcosaRenderMode.ThreeD
+            refreshRenderModeState()
+        }
+        renderModeToggle.add(map2DButton).minWidth(54f)
+        renderModeToggle.add(map3DButton).minWidth(54f)
+        renderModeToggle.pack()
+        renderModeToggle.setPosition(14f, stage.height - 14f, Align.topLeft)
+        stage.addActor(renderModeToggle)
+    }
+
+    private fun rebuildGlobeActor() {
+        globeActor?.remove()
+        globeActor?.dispose()
+        globeActor = null
+        if (tileMap.mapParameters.shape != MapShape.icosahedron) return
+
+        val actor = IcosaGlobeActor(tileMapProvider = { tileMap }) { tile ->
+            tileClickHandler?.invoke(tile)
+        }
+        actor.setSize(stage.width, stage.height)
+        stage.root.addActorAt(0, actor)
+        globeActor = actor
+    }
+
+    private fun isEditorReadOnly(): Boolean =
+        IcosaRenderModePolicy
+            .resolve(tileMap.mapParameters.shape, requestedRenderMode)
+            .isReadOnly
+
+    private fun refreshRenderModeState() {
+        val state = IcosaRenderModePolicy.resolve(tileMap.mapParameters.shape, requestedRenderMode)
+        requestedRenderMode = state.effectiveMode
+
+        renderModeToggle.isVisible = state.showToggle
+        map2DButton.isDisabled = state.effectiveMode == IcosaRenderMode.TwoD
+        map3DButton.isDisabled = state.effectiveMode == IcosaRenderMode.ThreeD
+        map2DButton.color = if (state.effectiveMode == IcosaRenderMode.TwoD) Color.GOLD else Color.WHITE
+        map3DButton.color = if (state.effectiveMode == IcosaRenderMode.ThreeD) Color.GOLD else Color.WHITE
+
+        val use3D = state.effectiveMode == IcosaRenderMode.ThreeD && state.showToggle
+        mapHolder.isVisible = !use3D
+        mapHolder.touchable = if (use3D) Touchable.disabled else Touchable.enabled
+        globeActor?.isVisible = use3D
+        globeActor?.touchable = if (use3D) Touchable.enabled else Touchable.disabled
+        tabs.touchable = if (state.isReadOnly) Touchable.disabled else Touchable.enabled
+        tabs.color.a = if (state.isReadOnly) 0.6f else 1f
+        toolsDrawer.touchable = if (state.isReadOnly) Touchable.disabled else Touchable.childrenOnly
+        toolsDrawer.color.a = if (state.isReadOnly) 0.6f else 1f
+        if (state.isReadOnly) hideSelection()
+
+        if (use3D) {
+            enableKeyboardPanningListener(enable = false)
+            stage.scrollFocus = globeActor
+        } else {
+            enableKeyboardPanningListener(mapHolder, true)
+            stage.scrollFocus = mapHolder
+        }
     }
 
     fun startBackgroundJob(
