@@ -13,7 +13,7 @@ import kotlin.math.sqrt
 
 class MapLandmassGenerator(
     private val tileMap: TileMap,
-    ruleset: Ruleset,
+    private val ruleset: Ruleset,
     private val randomness: MapGenerationRandomness
 ) {
     //region Fields
@@ -61,6 +61,10 @@ class MapLandmassGenerator(
         if (tileMap.mapParameters.shape == MapShape.flatEarth) {
             generateFlatEarthExtraWater()
         }
+
+        // Landmass generation mutates baseTerrain directly; refresh transient flags
+        // so subsequent generation steps (elevation, humidity, lakes/coasts) see water correctly.
+        tileMap.setTransients(ruleset)
     }
 
     private fun generateFlatEarthExtraWater() {
