@@ -47,8 +47,10 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
 
         for (i in mesh.vertices.indices) {
             val vec = mesh.vertices[i]
-            val lat = asin(vec.z.toDouble())
-            val lon = atan2(vec.y.toDouble(), vec.x.toDouble())
+            // Align climate latitude with the unfolded net's visual poles.
+            // GoldbergNetLayoutBuilder uses base-icosa vertex 0/3 as north/south, which lie on the Y axis.
+            val lat = asin(vec.y.toDouble())
+            val lon = atan2(vec.z.toDouble(), vec.x.toDouble())
             latitudes[i] = (lat / Math.PI * 180.0 * 1000.0).roundToInt()
             longitudes[i] = (lon / Math.PI * 180.0 * 1000.0).roundToInt()
 

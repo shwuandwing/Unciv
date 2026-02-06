@@ -231,6 +231,41 @@ class GoldbergTests {
         }
     }
 
+    @Test
+    fun testIcosaLatitudeAlignsWithNetNorthSouthFaces() {
+        val map = GoldbergMapBuilder.build(
+            MapParameters().apply {
+                shape = MapShape.icosahedron
+                mapSize = MapSize.Tiny
+            },
+            basicRuleset()
+        )
+        val topology = map.topology as GoldbergTopology
+
+        // Base-icosa face indices containing vertex 0 / 3 from GoldbergMeshBuilder.buildFaces().
+        val northFaces = setOf(0, 1, 2, 3, 4)
+        val southFaces = setOf(10, 11, 12, 13, 14)
+
+        val northLatitudes = map.values
+            .filter { topology.getPrimaryFaceForDebug(it) in northFaces }
+            .map { it.latitude }
+        val southLatitudes = map.values
+            .filter { topology.getPrimaryFaceForDebug(it) in southFaces }
+            .map { it.latitude }
+
+        Assert.assertTrue("Expected north face tiles for latitude check", northLatitudes.isNotEmpty())
+        Assert.assertTrue("Expected south face tiles for latitude check", southLatitudes.isNotEmpty())
+
+        val northAverage = northLatitudes.average()
+        val southAverage = southLatitudes.average()
+        Assert.assertTrue("Expected north polar faces to have positive average latitude, got $northAverage", northAverage > 0.0)
+        Assert.assertTrue("Expected south polar faces to have negative average latitude, got $southAverage", southAverage < 0.0)
+        Assert.assertTrue(
+            "Expected strong north/south separation in latitude averages (north=$northAverage south=$southAverage)",
+            (northAverage - southAverage) > 20_000.0
+        )
+    }
+
     private fun normalizeAngle(angle: Float): Float {
         var normalized = angle
         val pi = Math.PI.toFloat()
