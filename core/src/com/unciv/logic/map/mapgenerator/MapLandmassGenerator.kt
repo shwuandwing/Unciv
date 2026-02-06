@@ -235,6 +235,11 @@ class MapLandmassGenerator(
     }
 
     private fun createThreeContinents() {
+        if (tileMap.mapParameters.shape == MapShape.icosahedron) {
+            createThreeContinentsIcosahedron()
+            return
+        }
+
         val isNorth = randomness.RNG.nextDouble() < 0.5
         // On flat earth maps we can randomly do East or West instead of North or South
         val isEastWest = tileMap.mapParameters.shape == MapShape.flatEarth && randomness.RNG.nextDouble() > 0.5
@@ -243,6 +248,54 @@ class MapLandmassGenerator(
         for (tile in tileMap.values) {
             var elevation = randomness.getPerlinNoise(tile, elevationSeed)
             elevation = (elevation + getThreeContinentsTransform(tile, isNorth, isEastWest)) / 2.0
+            spawnLandOrWater(tile, elevation)
+        }
+    }
+
+    /**
+     * Icosahedron maps are topologically wrapped by seam neighbors, so corner-style 2D shaping can merge intended
+     * continents. Build three anchor regions from graph distance and keep water channels around Voronoi borders.
+     */
+    private fun createThreeContinentsIcosahedron() {
+        val tileCount = tileMap.tileList.size
+        if (tileCount < 3) {
+            val elevationSeed = randomness.RNG.nextInt().toDouble()
+            for (tile in tileMap.values) {
+                spawnLandOrWater(tile, randomness.getPerlinNoise(tile, elevationSeed))
+            }
+            return
+        }
+
+        val anchorA = randomness.RNG.nextInt(tileCount)
+        val distancesA = buildDistanceField(anchorA)
+        val anchorB = selectFarthestIndex(distancesA)
+        val distancesB = buildDistanceField(anchorB)
+        val anchorC = selectThirdAnchor(distancesA, distancesB)
+        val distancesC = buildDistanceField(anchorC)
+
+        val minAnchorDistance = minOf(
+            distancesA[anchorB],
+            distancesA[anchorC],
+            distancesB[anchorC]
+        ).coerceAtLeast(4)
+        val continentRadius = minAnchorDistance * 0.52
+        val channelWidth = (minAnchorDistance * 0.12).coerceAtLeast(1.25)
+        val elevationSeed = randomness.RNG.nextInt().toDouble()
+
+        for (tile in tileMap.values) {
+            val idx = tile.zeroBasedIndex
+            val distA = distancesA[idx].toDouble()
+            val distB = distancesB[idx].toDouble()
+            val distC = distancesC[idx].toDouble()
+            val (nearest, secondNearest) = nearestAndSecondNearest(distA, distB, distC)
+
+            val transform = getThreeContinentsIcosahedronTransform(
+                nearestDistance = nearest,
+                secondNearestDistance = secondNearest,
+                continentRadius = continentRadius,
+                channelWidth = channelWidth
+            )
+            val elevation = randomness.getPerlinNoise(tile, elevationSeed) * 0.35 + transform * 0.65
             spawnLandOrWater(tile, elevation)
         }
     }
@@ -430,6 +483,84 @@ class MapLandmassGenerator(
         }
 
         return max(elevationOffset, -0.35)
+    }
+
+    private fun getThreeContinentsIcosahedronTransform(
+        nearestDistance: Double,
+        secondNearestDistance: Double,
+        continentRadius: Double,
+        channelWidth: Double
+    ): Double {
+        val randomScale = randomness.RNG.nextDouble()
+        val coreScore = (1.0 - nearestDistance / continentRadius).coerceIn(0.0, 1.0)
+        val boundaryGap = secondNearestDistance - nearestDistance
+        val channelPenalty = ((channelWidth - boundaryGap) / channelWidth).coerceIn(0.0, 1.0)
+        val continentScore = (coreScore - 0.55 * channelPenalty).coerceIn(0.0, 1.0)
+        return min(0.2, -1.0 + (5.0 * continentScore.pow(0.6) + randomScale) / 3.0)
+    }
+
+    private fun nearestAndSecondNearest(a: Double, b: Double, c: Double): Pair<Double, Double> {
+        var nearest = a
+        var secondNearest = b
+        if (secondNearest < nearest) {
+            nearest = b
+            secondNearest = a
+        }
+        if (c < nearest) {
+            secondNearest = nearest
+            nearest = c
+        } else if (c < secondNearest) {
+            secondNearest = c
+        }
+        return nearest to secondNearest
+    }
+
+    private fun selectFarthestIndex(distances: IntArray): Int {
+        var bestIndex = 0
+        var bestDistance = Int.MIN_VALUE
+        for (idx in distances.indices) {
+            if (distances[idx] > bestDistance) {
+                bestDistance = distances[idx]
+                bestIndex = idx
+            }
+        }
+        return bestIndex
+    }
+
+    private fun selectThirdAnchor(distancesA: IntArray, distancesB: IntArray): Int {
+        var bestIndex = 0
+        var bestScore = Int.MIN_VALUE
+        for (idx in distancesA.indices) {
+            if (distancesA[idx] == 0 || distancesB[idx] == 0) continue
+            val score = min(distancesA[idx], distancesB[idx])
+            if (score > bestScore) {
+                bestScore = score
+                bestIndex = idx
+            }
+        }
+        return bestIndex
+    }
+
+    private fun buildDistanceField(startIndex: Int): IntArray {
+        val distances = IntArray(tileMap.tileList.size) { Int.MAX_VALUE }
+        val queue = IntArray(tileMap.tileList.size)
+        var head = 0
+        var tail = 0
+        distances[startIndex] = 0
+        queue[tail++] = startIndex
+
+        while (head < tail) {
+            val currentIndex = queue[head++]
+            val nextDistance = distances[currentIndex] + 1
+            val currentTile = tileMap.tileList[currentIndex]
+            for (neighbor in currentTile.neighbors) {
+                val neighborIndex = neighbor.zeroBasedIndex
+                if (distances[neighborIndex] != Int.MAX_VALUE) continue
+                distances[neighborIndex] = nextDistance
+                queue[tail++] = neighborIndex
+            }
+        }
+        return distances
     }
 
     /**
