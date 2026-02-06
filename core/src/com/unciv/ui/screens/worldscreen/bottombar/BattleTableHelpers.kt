@@ -17,6 +17,8 @@ import com.unciv.UncivGame
 import com.unciv.logic.battle.ICombatant
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.map.HexMath
+import com.unciv.logic.map.MapShape
+import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.map.toVector2
 import com.unciv.models.translations.tr
 import com.unciv.ui.components.tilegroups.TileSetStrings
@@ -179,10 +181,11 @@ object BattleTableHelpers {
 
         val actorsToMove = getMapActorsForCombatant(attacker).toList()
 
-        val attackVectorHexCoords = defender.getTile().position.minus(attacker.getTile().position)
-        val attackVectorWorldCoords = HexMath.hex2WorldCoords(attackVectorHexCoords).toVector2()
-            .nor()  // normalize vector to length of "1"
-            .scl(moveActorsDisplacement)
+        val attackVectorWorldCoords = computeAttackVectorForAnimation(
+            attacker.getTile(),
+            defender.getTile(),
+            moveActorsDisplacement
+        )
 
         val attackerGroup = mapHolder.tileGroups[attacker.getTile()]!!
         val defenderGroup = mapHolder.tileGroups[defender.getTile()]!!
@@ -278,5 +281,21 @@ object BattleTableHelpers {
         }
         healthBar.pack()
         return healthBar
+    }
+
+    fun computeAttackVectorForAnimation(attackerTile: Tile, defenderTile: Tile, displacement: Float): Vector2 {
+        return if (attackerTile.tileMap.mapParameters.shape == MapShape.icosahedron) {
+            val tileMap = attackerTile.tileMap
+            val fromPos = tileMap.getWorldPositionForRendering(attackerTile)
+            val toPos = tileMap.getWorldPositionForRendering(defenderTile)
+            toPos.sub(fromPos)
+                .nor()
+                .scl(displacement)
+        } else {
+            val attackVectorHexCoords = defenderTile.position.minus(attackerTile.position)
+            HexMath.hex2WorldCoords(attackVectorHexCoords).toVector2()
+                .nor()  // normalize vector to length of "1"
+                .scl(displacement)
+        }
     }
 }

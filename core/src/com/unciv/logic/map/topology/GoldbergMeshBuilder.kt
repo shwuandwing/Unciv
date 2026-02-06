@@ -9,6 +9,7 @@ object GoldbergMeshBuilder {
         val vertices: List<Vector3>,
         val neighbors: List<IntArray>,
         val vertexKeyToIndex: Map<String, Int>,
+        val vertexFaces: List<IntArray>,
         val faces: List<IntArray>,
         val edgeMaxChord: Float
     )
@@ -93,9 +94,10 @@ object GoldbergMeshBuilder {
         }
 
         val neighborsFinal = neighbors.map { set -> set.toIntArray() }
+        val vertexFaces = buildVertexFaces(vertexKeyToIndex, faces, vertices.size)
         val maxChord = computeMaxChord(vertices, neighborsFinal)
 
-        return GoldbergMesh(vertices, neighborsFinal, vertexKeyToIndex, faces, maxChord)
+        return GoldbergMesh(vertices, neighborsFinal, vertexKeyToIndex, vertexFaces, faces, maxChord)
     }
 
     private fun buildBaseVertices(): List<Vector3> {
@@ -154,5 +156,54 @@ object GoldbergMeshBuilder {
             }
         }
         return maxChord
+    }
+
+    private fun buildVertexFaces(
+        vertexKeyToIndex: Map<String, Int>,
+        faces: List<IntArray>,
+        vertexCount: Int
+    ): List<IntArray> {
+        val memberships = Array(vertexCount) { LinkedHashSet<Int>() }
+
+        fun edgeKey(a: Int, b: Int): Pair<Int, Int> = if (a <= b) a to b else b to a
+
+        val edgeToFaces = HashMap<Pair<Int, Int>, MutableList<Int>>()
+        for ((faceIndex, face) in faces.withIndex()) {
+            val a = face[0]
+            val b = face[1]
+            val c = face[2]
+            edgeToFaces.getOrPut(edgeKey(a, b)) { ArrayList() }.add(faceIndex)
+            edgeToFaces.getOrPut(edgeKey(b, c)) { ArrayList() }.add(faceIndex)
+            edgeToFaces.getOrPut(edgeKey(c, a)) { ArrayList() }.add(faceIndex)
+        }
+
+        for ((key, index) in vertexKeyToIndex) {
+            when {
+                key.startsWith("F") -> {
+                    val faceIndex = key.substring(1).substringBefore('_').toInt()
+                    memberships[index].add(faceIndex)
+                }
+                key.startsWith("E") -> {
+                    val parts = key.substring(1).split('_')
+                    if (parts.size >= 2) {
+                        val a = parts[0].toInt()
+                        val b = parts[1].toInt()
+                        val adjacentFaces = edgeToFaces[edgeKey(a, b)] ?: emptyList()
+                        for (faceIndex in adjacentFaces) memberships[index].add(faceIndex)
+                    }
+                }
+                key.startsWith("V") -> {
+                    val vertex = key.substring(1).toInt()
+                    for ((faceIndex, face) in faces.withIndex()) {
+                        if (face.contains(vertex)) memberships[index].add(faceIndex)
+                    }
+                }
+            }
+        }
+
+        return memberships.mapIndexed { index, set ->
+            if (set.isEmpty()) throw IllegalStateException("Missing face membership for Goldberg vertex $index")
+            set.toIntArray()
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.unique.LocalUniqueCache
 import com.unciv.models.tilesets.TileSetCache
@@ -29,6 +30,8 @@ abstract class TileLayer(val tileGroup: TileGroup, size: Float) : Group() {
         this.x = tileGroup.hexagonImagePosition.first
         this.y = tileGroup.hexagonImagePosition.second
         this.setScale(scale ?: TileSetCache.getCurrent().config.tileScale)
+        val isIcosahedron = tile.hasTileMap() && tile.tileMap.mapParameters.shape == MapShape.icosahedron
+        this.rotation = if (isIcosahedron) 30f else 0f
         return this
     }
 

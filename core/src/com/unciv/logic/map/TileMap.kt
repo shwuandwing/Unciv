@@ -26,7 +26,10 @@ import com.unciv.utils.contains
 import yairm210.purity.annotations.Readonly
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** An Unciv map with all properties as produced by the [map editor][com.unciv.ui.screens.mapeditorscreen.MapEditorScreen]
  * or [MapGenerator][com.unciv.logic.map.mapgenerator.MapGenerator]; or as part of a running [game][GameInfo].
@@ -353,7 +356,48 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
      */
     @Readonly
     fun getNeighborTilePositionAsWorldCoords(tile: Tile, otherTile: Tile): Vector2 =
-        HexMath.getClockPositionToWorldVector(getNeighborTileClockPosition(tile, otherTile))
+        if (mapParameters.shape == MapShape.icosahedron) {
+            val fromPos = topology.getWorldPosition(tile)
+            val toPos = topology.getWorldPosition(otherTile)
+            val dx = toPos.x - fromPos.x
+            val dy = toPos.y - fromPos.y
+            val length = sqrt(dx * dx + dy * dy)
+            val normalized = if (length == 0f) Vector2.Zero else Vector2(dx / length, dy / length)
+            worldToRenderCoords(Vector2(normalized.x * sqrt(3f), normalized.y * sqrt(3f)))
+        } else {
+            HexMath.getClockPositionToWorldVector(getNeighborTileClockPosition(tile, otherTile))
+        }
+
+    @Readonly
+    fun worldToRenderCoords(worldPos: Vector2): Vector2 {
+        if (mapParameters.shape != MapShape.icosahedron) return worldPos.cpy()
+        val cos = COS_30
+        val sin = SIN_30
+        return Vector2(
+            worldPos.x * cos - worldPos.y * sin,
+            worldPos.x * sin + worldPos.y * cos
+        )
+    }
+
+    @Readonly
+    fun renderToWorldCoords(renderPos: Vector2): Vector2 {
+        if (mapParameters.shape != MapShape.icosahedron) return renderPos.cpy()
+        val cos = COS_30
+        val sin = SIN_30
+        return Vector2(
+            renderPos.x * cos + renderPos.y * sin,
+            -renderPos.x * sin + renderPos.y * cos
+        )
+    }
+
+    @Readonly
+    fun getWorldPositionForRendering(tile: Tile): Vector2 =
+        worldToRenderCoords(topology.getWorldPosition(tile))
+
+    companion object {
+        private val COS_30 = cos((Math.PI / 6.0)).toFloat()
+        private val SIN_30 = sin((Math.PI / 6.0)).toFloat()
+    }
 
     /**
      * Returns the closest position to (0, 0) outside the map which can be wrapped

@@ -20,12 +20,14 @@ import com.unciv.ui.components.input.onClick
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.screens.basescreen.BaseScreen
 import com.unciv.ui.screens.worldscreen.worldmap.WorldMapHolder
+import com.unciv.utils.DebugUtils
 
 class MinimapHolder(val mapHolder: WorldMapHolder) : Table() {
     private val worldScreen = mapHolder.worldScreen
     private var minimapSize = Int.MIN_VALUE
     private var maximized = false
     private var lastCutoutSetting = false
+    private var lastVisibleMapDebug = DebugUtils.VISIBLE_MAP
     lateinit var minimap: Minimap
 
     /** Button, next to the minimap, to toggle the unit movement map overlay. */
@@ -72,8 +74,14 @@ class MinimapHolder(val mapHolder: WorldMapHolder) : Table() {
         val civ: Civilization? = civInfo.takeUnless { GUI.getViewingPlayer().isSpectator() }
         val newMinimapSize = worldScreen.game.settings.minimapSize
         val cutoutSetting = worldScreen.game.settings.androidCutout
-        if (newMinimapSize == minimapSize && civ?.exploredRegion?.shouldUpdateMinimap() != true && cutoutSetting == lastCutoutSetting) return
+        val visibleMapDebug = DebugUtils.VISIBLE_MAP
+        if (newMinimapSize == minimapSize
+            && civ?.exploredRegion?.shouldUpdateMinimap() != true
+            && cutoutSetting == lastCutoutSetting
+            && visibleMapDebug == lastVisibleMapDebug
+        ) return
         lastCutoutSetting = cutoutSetting
+        lastVisibleMapDebug = visibleMapDebug
         minimapSize = newMinimapSize
         maximized = false
         rebuild(civ)

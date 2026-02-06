@@ -14,6 +14,12 @@ object DebugUtils {
     
     var SHOW_TILE_IMAGE_LOCATIONS: Boolean = false
 
+    /** Shows icosahedron seam edges as overlay markers. */
+    var SHOW_SEAM_EDGES: Boolean = false
+
+    /** Shows icosahedron face boundaries and labels (F0..F19) as overlay markers. */
+    var SHOW_ICOSA_FACES: Boolean = false
+
     /** For when you need to test something in an advanced game and don't have time to faff around */
     var SUPERCHARGED: Boolean = false
 

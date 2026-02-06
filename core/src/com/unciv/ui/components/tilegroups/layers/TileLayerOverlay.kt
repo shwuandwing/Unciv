@@ -6,9 +6,17 @@ import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.unciv.Constants
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.map.MapShape
+import com.unciv.logic.map.tile.Tile
+import com.unciv.logic.map.topology.GoldbergTopology
 import com.unciv.models.ruleset.unique.LocalUniqueCache
+import com.unciv.ui.components.extensions.center
+import com.unciv.ui.components.extensions.toLabel
 import com.unciv.ui.components.tilegroups.TileGroup
 import com.unciv.ui.images.ImageGetter
+import com.unciv.utils.DebugUtils
+import kotlin.math.max
+import kotlin.math.sqrt
 
 class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup, size) {
 
@@ -21,6 +29,9 @@ class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
     private var goodCityLocationIndicator: Image? = null
     private var fog: Image? = null
     private var unexplored: Image? = null
+    private val seamMarkers = HashMap<Tile, Image>()
+    private val faceBoundaryMarkers = HashMap<Tile, Image>()
+    private var faceLabel: Actor? = null
 
     private fun getHighlight() = ImageGetter.getImage(strings.highlight).setHexagonSize() // for blue and red circles/emphasis on the tile
     private fun getCrosshair() = ImageGetter.getImage(strings.crosshair).setHexagonSize() // for when a unit is targeted
@@ -36,6 +47,9 @@ class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         fog?.toFront()
         crosshair?.toFront()
         goodCityLocationIndicator?.toFront()
+        for (marker in seamMarkers.values) marker.toFront()
+        for (marker in faceBoundaryMarkers.values) marker.toFront()
+        faceLabel?.toFront()
     }
 
     fun showCrosshair(alpha: Float = 1f) {
@@ -88,6 +102,8 @@ class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         hideHighlight()
         hideCrosshair()
         hideGoodCityLocationIndicator()
+        clearSeamMarkers()
+        clearFaceOverlay()
         determineVisibility()
     }
 
@@ -95,6 +111,8 @@ class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         val isViewable = viewingCiv == null || isViewable(viewingCiv)
         
         setFog(isViewable)
+        updateSeamMarkers()
+        updateFaceOverlay()
         
         if (viewingCiv == null) return
 
@@ -134,8 +152,137 @@ class TileLayerOverlay(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
     }
 
     override fun determineVisibility() {
-        isVisible = fog != null || unexplored != null || highlight != null || crosshair != null || goodCityLocationIndicator != null
+        isVisible = fog != null || unexplored != null || highlight != null || crosshair != null
+            || goodCityLocationIndicator != null || seamMarkers.isNotEmpty()
+            || faceBoundaryMarkers.isNotEmpty() || faceLabel != null
         orderToFront()
+    }
+
+    private fun updateSeamMarkers() {
+        if (!tile.hasTileMap()) {
+            clearSeamMarkers()
+            return
+        }
+
+        val isIcosahedron = tile.tileMap.mapParameters.shape == MapShape.icosahedron
+        if (!DebugUtils.SHOW_SEAM_EDGES || !isIcosahedron) {
+            clearSeamMarkers()
+            return
+        }
+
+        val centerX = tileGroup.hexagonImagePosition.first + tileGroup.hexagonImageOrigin.first
+        val centerY = tileGroup.hexagonImagePosition.second + tileGroup.hexagonImageOrigin.second
+        val lineLength = tileGroup.hexagonImageWidth * 0.22f
+        val lineThickness = max(1f, tileGroup.hexagonImageWidth * 0.03f)
+        val offset = tileGroup.hexagonImageOrigin.second * 0.9f
+
+        val stale = seamMarkers.keys.toMutableSet()
+        for (neighbor in tile.neighbors) {
+            if (!tile.tileMap.topology.isSeamEdge(tile, neighbor)) continue
+            stale.remove(neighbor)
+            if (seamMarkers.containsKey(neighbor)) continue
+
+            val fromPos = tile.tileMap.getWorldPositionForRendering(tile)
+            val toPos = tile.tileMap.getWorldPositionForRendering(neighbor)
+            val dx = toPos.x - fromPos.x
+            val dy = toPos.y - fromPos.y
+            val length = sqrt(dx * dx + dy * dy)
+            if (length == 0f) continue
+            val dirX = dx / length
+            val dirY = dy / length
+
+            val startX = centerX + dirX * (offset - lineLength * 0.5f)
+            val startY = centerY + dirY * (offset - lineLength * 0.5f)
+            val endX = centerX + dirX * (offset + lineLength * 0.5f)
+            val endY = centerY + dirY * (offset + lineLength * 0.5f)
+
+            val marker = ImageGetter.getLine(startX, startY, endX, endY, lineThickness)
+            marker.color = Color.MAGENTA.cpy().apply { a = 0.75f }
+            addActor(marker)
+            seamMarkers[neighbor] = marker
+        }
+
+        for (neighbor in stale) {
+            seamMarkers.remove(neighbor)?.remove()
+        }
+    }
+
+    private fun clearSeamMarkers() {
+        if (seamMarkers.isEmpty()) return
+        for (marker in seamMarkers.values) marker.remove()
+        seamMarkers.clear()
+    }
+
+    private fun updateFaceOverlay() {
+        if (!tile.hasTileMap()) {
+            clearFaceOverlay()
+            return
+        }
+        val isIcosahedron = tile.tileMap.mapParameters.shape == MapShape.icosahedron
+        val topology = tile.tileMap.topology as? GoldbergTopology
+        if (!DebugUtils.SHOW_ICOSA_FACES || !isIcosahedron || topology == null) {
+            clearFaceOverlay()
+            return
+        }
+
+        val centerX = tileGroup.hexagonImagePosition.first + tileGroup.hexagonImageOrigin.first
+        val centerY = tileGroup.hexagonImagePosition.second + tileGroup.hexagonImageOrigin.second
+        val lineLength = tileGroup.hexagonImageWidth * 0.32f
+        val lineThickness = max(1f, tileGroup.hexagonImageWidth * 0.03f)
+        val offset = tileGroup.hexagonImageOrigin.second * 0.72f
+
+        val stale = faceBoundaryMarkers.keys.toMutableSet()
+        for (neighbor in tile.neighbors) {
+            if (!topology.isFaceBoundaryForDebug(tile, neighbor)) continue
+            stale.remove(neighbor)
+            if (faceBoundaryMarkers.containsKey(neighbor)) continue
+
+            val fromPos = tile.tileMap.getWorldPositionForRendering(tile)
+            val toPos = tile.tileMap.getWorldPositionForRendering(neighbor)
+            val dx = toPos.x - fromPos.x
+            val dy = toPos.y - fromPos.y
+            val length = sqrt(dx * dx + dy * dy)
+            if (length == 0f) continue
+            val dirX = dx / length
+            val dirY = dy / length
+
+            val startX = centerX + dirX * (offset - lineLength * 0.5f)
+            val startY = centerY + dirY * (offset - lineLength * 0.5f)
+            val endX = centerX + dirX * (offset + lineLength * 0.5f)
+            val endY = centerY + dirY * (offset + lineLength * 0.5f)
+
+            val marker = ImageGetter.getLine(startX, startY, endX, endY, lineThickness)
+            marker.color = Color.GOLDENROD.cpy().apply { a = 0.8f }
+            addActor(marker)
+            faceBoundaryMarkers[neighbor] = marker
+        }
+        for (neighbor in stale) {
+            faceBoundaryMarkers.remove(neighbor)?.remove()
+        }
+
+        val face = topology.getPrimaryFaceForDebug(tile)
+        val shouldShowLabel = face >= 0 && topology.getFaceLabelTileForDebug(face) == tile.zeroBasedIndex
+        if (!shouldShowLabel) {
+            faceLabel?.remove()
+            faceLabel = null
+            return
+        }
+        if (faceLabel == null) {
+            faceLabel = "F$face".toLabel(Color.ORANGE, 14).apply {
+                center(tileGroup)
+                moveBy(0f, 8f)
+            }
+            addActor(faceLabel)
+        }
+    }
+
+    private fun clearFaceOverlay() {
+        if (faceBoundaryMarkers.isNotEmpty()) {
+            for (marker in faceBoundaryMarkers.values) marker.remove()
+            faceBoundaryMarkers.clear()
+        }
+        faceLabel?.remove()
+        faceLabel = null
     }
 
 }
