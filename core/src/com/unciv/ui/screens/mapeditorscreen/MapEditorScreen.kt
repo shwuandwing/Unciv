@@ -24,6 +24,7 @@ import com.unciv.models.metadata.GameParameters
 import com.unciv.models.metadata.GameSetupInfo
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.RulesetCache
+import com.unciv.ui.components.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.components.widgets.UncivTextField
 import com.unciv.ui.components.input.KeyCharAndCode
 import com.unciv.ui.components.input.KeyShortcutDispatcherVeto
@@ -31,6 +32,7 @@ import com.unciv.ui.components.input.KeyboardPanningListener
 import com.unciv.ui.components.input.onChange
 import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.tilegroups.TileGroup
+import com.unciv.ui.components.extensions.toImageButton
 import com.unciv.ui.components.extensions.toTextButton
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.images.ImageWithCustomSize
@@ -97,6 +99,12 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
     private val renderModeToggle = Table(skin)
     private val map2DButton = "2D".toTextButton()
     private val map3DButton = "3D".toTextButton()
+    private val resetNorthButton = "TechIcons/Compass".toImageButton(
+        iconSize = 22f,
+        circleSize = 36f,
+        circleColor = Color(0.1f, 0.1f, 0.16f, 0.82f),
+        overColor = Color.GOLD
+    )
     private var globeActor: IcosaGlobeActor? = null
     private var requestedRenderMode = IcosaRenderMode.TwoD
     var tileClickHandler: ((tile: Tile)->Unit)? = null
@@ -362,6 +370,13 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         renderModeToggle.pack()
         renderModeToggle.setPosition(14f, stage.height - 14f, Align.topLeft)
         stage.addActor(renderModeToggle)
+
+        resetNorthButton.onClick {
+            globeActor?.resetToNorth()
+        }
+        resetNorthButton.addTooltip("Reset to north", 18f, targetAlign = Align.bottom, hideIcons = true)
+        resetNorthButton.setPosition(renderModeToggle.x + renderModeToggle.width + 8f, stage.height - 14f, Align.topLeft)
+        stage.addActor(resetNorthButton)
     }
 
     private fun rebuildGlobeActor() {
@@ -388,6 +403,8 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         requestedRenderMode = state.effectiveMode
 
         renderModeToggle.isVisible = state.showToggle
+        resetNorthButton.isVisible = state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+        resetNorthButton.touchable = if (resetNorthButton.isVisible) Touchable.enabled else Touchable.disabled
         map2DButton.isDisabled = state.effectiveMode == IcosaRenderMode.TwoD
         map3DButton.isDisabled = state.effectiveMode == IcosaRenderMode.ThreeD
         map2DButton.color = if (state.effectiveMode == IcosaRenderMode.TwoD) Color.GOLD else Color.WHITE
