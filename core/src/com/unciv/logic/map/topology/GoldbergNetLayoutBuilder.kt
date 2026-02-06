@@ -17,6 +17,21 @@ object GoldbergNetLayoutBuilder {
         frequency: Int,
         mesh: GoldbergMeshBuilder.GoldbergMesh,
         layoutId: String = DEFAULT_LAYOUT
+    ): LayoutResult = buildIndexToCoordInternal(
+        frequency = frequency,
+        mesh = mesh,
+        layoutId = layoutId,
+        // Adjacent directions produce equilateral-looking face silhouettes in world-space.
+        baseDir1 = HexCoord.of(1, 0),
+        baseDir2 = HexCoord.of(1, 1)
+    )
+
+    private fun buildIndexToCoordInternal(
+        frequency: Int,
+        mesh: GoldbergMeshBuilder.GoldbergMesh,
+        layoutId: String,
+        baseDir1: HexCoord,
+        baseDir2: HexCoord
     ): LayoutResult {
         require(layoutId == DEFAULT_LAYOUT) { "Unsupported Goldberg layout '$layoutId'" }
         val faces = mesh.faces
@@ -37,9 +52,6 @@ object GoldbergNetLayoutBuilder {
 
         val faceCornerCoords = Array(faces.size) { mutableMapOf<Int, HexCoord>() }
         val placed = BooleanArray(faces.size)
-
-        val baseDir1 = HexCoord.of(1, 0)
-        val baseDir2 = HexCoord.of(0, 1)
 
         fun placeBaseFace(faceIndex: Int, origin: HexCoord) {
             val face = faces[faceIndex]
@@ -173,15 +185,8 @@ object GoldbergNetLayoutBuilder {
         }
 
         val finalCoords = indexToCoord.map { it ?: throw IllegalStateException("Unassigned Goldberg coord") }
-        val rotated = finalCoords.map { rotate60CounterClockwise(it) }
-        val normalized = normalizeToPositive(rotated)
+        val normalized = normalizeToPositive(finalCoords)
         return LayoutResult(normalized, faceOrder)
-    }
-
-    private fun rotate60CounterClockwise(coord: HexCoord): HexCoord {
-        val x = coord.x
-        val y = coord.y
-        return HexCoord.of(x + y, -x)
     }
 
     private fun normalizeToPositive(coords: List<HexCoord>): List<HexCoord> {

@@ -1,22 +1,28 @@
 package com.unciv.ui.screens.worldscreen.minimap
 
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.utils.Align
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.map.tile.TileHistory.TileHistoryState.CityCenterType
 import com.unciv.ui.components.extensions.surroundWithCircle
 import com.unciv.ui.components.input.onClick
+import com.unciv.ui.components.tilegroups.layers.BorderEdgeGeometry
 import com.unciv.ui.images.IconCircleGroup
 import com.unciv.ui.images.ImageGetter
 import com.unciv.utils.DebugUtils
-import kotlin.math.PI
-import kotlin.math.atan
 
-class MinimapTile(val tile: Tile, tileSize: Float, val onClick: () -> Unit) {
+class MinimapTile(
+    val tile: Tile,
+    tileSize: Float,
+    val onClick: () -> Unit,
+    worldPositionOverride: Vector2? = null
+) {
     val image: Image = ImageGetter.getImage("OtherIcons/Hexagon")
     private var cityCircleImage: IconCircleGroup? = null
     var owningCiv: Civilization? = null
@@ -24,7 +30,8 @@ class MinimapTile(val tile: Tile, tileSize: Float, val onClick: () -> Unit) {
     val isUnrevealed get() = !image.isVisible
 
     init {
-        val positionalVector = tile.tileMap.topology.getWorldPosition(tile)
+        val worldPosition = worldPositionOverride ?: tile.tileMap.topology.getWorldPosition(tile)
+        val positionalVector = tile.tileMap.worldToRenderCoords(worldPosition)
 
         image.isVisible = false
         image.setSize(tileSize, tileSize)
@@ -32,6 +39,10 @@ class MinimapTile(val tile: Tile, tileSize: Float, val onClick: () -> Unit) {
             positionalVector.x * 0.5f * tileSize,
             positionalVector.y * 0.5f * tileSize
         )
+        if (tile.tileMap.mapParameters.shape == MapShape.icosahedron) {
+            image.setOrigin(Align.center)
+            image.rotation = 30f
+        }
         image.onClick(onClick)
     }
 
@@ -90,12 +101,12 @@ class MinimapTile(val tile: Tile, tileSize: Float, val onClick: () -> Unit) {
             // Until this point, the border image is now CENTERED on the tile it's a border for
 
             val relativeWorldPosition = tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
-            val sign = if (relativeWorldPosition.x < 0) -1 else 1
-            val angle = sign * (atan(sign * relativeWorldPosition.y / relativeWorldPosition.x) * 180 / PI - 90.0).toFloat()
+            val angle = BorderEdgeGeometry.borderAngleDegrees(relativeWorldPosition)
+            val offset = BorderEdgeGeometry.getOffsetTowardsNeighbor(relativeWorldPosition, hexagonEdgeLength / 2)
 
             borderImage.moveBy(
-                -relativeWorldPosition.x * hexagonEdgeLength / 2,
-                -relativeWorldPosition.y * hexagonEdgeLength / 2
+                offset.x,
+                offset.y
             )
             borderImage.rotateBy(angle)
             borderImage.color = owningCiv!!.nation.getInnerColor()

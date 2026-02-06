@@ -129,11 +129,19 @@ object RegionStartFinder {
         }
 
         // Something went extremely wrong and there is somehow no place to start. Spawn some land and start there
-        val panicPosition = region.rect.getPosition(Vector2()).toHexCoord()
+        val rectPos = region.rect.getPosition(Vector2())
+        val panicPosition = com.unciv.logic.map.HexMath.getTileCoordsFromColumnRow(
+            rectPos.x.roundToInt(),
+            rectPos.y.roundToInt()
+        )
+        val panicTile = region.tileMap.getIfTileExistsOrNull(panicPosition.x, panicPosition.y)
+            ?: region.tiles.firstOrNull()
+            ?: region.tileMap.values.firstOrNull()
+            ?: return
         val panicTerrain = region.tileMap.ruleset!!.terrains.values.first { it.type == TerrainType.Land }.name
-        region.tileMap[panicPosition].baseTerrain = panicTerrain
-        region.tileMap[panicPosition].setTerrainFeatures(listOf())
-        setRegionStart(region, panicPosition, tileData)
+        panicTile.baseTerrain = panicTerrain
+        panicTile.setTerrainFeatures(listOf())
+        setRegionStart(region, panicTile.position, tileData)
     }
     
     /** @returns a scaled according to [proportion] Rectangle centered over [originalRect] */

@@ -48,6 +48,8 @@ internal class DebugTab(
         addCheckbox("View entire map", DebugUtils::VISIBLE_MAP, updateWorld = true)
         addCheckbox("Show coordinates on tiles", DebugUtils::SHOW_TILE_COORDS, updateWorld = true)
         addCheckbox("Show tile image locations", DebugUtils::SHOW_TILE_IMAGE_LOCATIONS, updateWorld = true)
+        addCheckbox("Show icosahedron seams", DebugUtils::SHOW_SEAM_EDGES, updateWorld = true)
+        addCheckbox("Show icosahedron faces", DebugUtils::SHOW_ICOSA_FACES, updateWorld = true)
 
         val curGameInfo = game.gameInfo
         if (curGameInfo != null) {

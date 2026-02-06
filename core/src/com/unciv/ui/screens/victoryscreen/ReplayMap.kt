@@ -114,6 +114,20 @@ class ReplayMap(
     }
 
     override fun calcTileSize(maxWidth: Float, maxHeight: Float): Float {
+        if (tileMap.mapParameters.shape == MapShape.icosahedron) {
+            val mapBounds = tileMap.topology.getWorldBounds()
+            val exploredBounds = viewingCiv.exploredRegion.getWorldBounds()
+            val bounds = if (exploredBounds == null
+                || exploredBounds.width <= 0f
+                || exploredBounds.height <= 0f
+                || exploredBounds.width >= mapBounds.width * 0.98f
+            ) mapBounds else exploredBounds
+            val padding = 1f
+            return min(
+                maxWidth / ((bounds.width + padding) * 0.5f),
+                maxHeight / ((bounds.height + padding) * 0.5f),
+            )
+        }
         val height = viewingCiv.exploredRegion.getHeight().toFloat()
         val width = viewingCiv.exploredRegion.getWidth().toFloat()
         return min (

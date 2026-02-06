@@ -1,15 +1,15 @@
 package com.unciv.ui.components.tilegroups.layers
 
 import com.badlogic.gdx.graphics.g2d.Batch
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.unique.LocalUniqueCache
 import com.unciv.ui.components.tilegroups.TileGroup
 import com.unciv.ui.images.ImageGetter
-import kotlin.math.PI
-import kotlin.math.atan
 
 class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup, size) {
 
@@ -46,6 +46,40 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         return tileMap.getClockPositionNeighborTile(this,(tileMap.getNeighborTileClockPosition(this, neighbor) + 2) % 12)
     }
 
+    /** Returns left/right shared neighbors by geometry, robust for icosa seam/nonlocal adjacencies. */
+    private fun Tile.getSharedNeighborsByGeometry(neighbor: Tile): Pair<Tile?, Tile?> {
+        val commonNeighbors = neighbors.filter { candidate ->
+            candidate != neighbor && neighbor.neighbors.any { it == candidate }
+        }.toList()
+        if (commonNeighbors.isEmpty()) return null to null
+        if (commonNeighbors.size == 1) return commonNeighbors[0] to commonNeighbors[0]
+
+        val origin = tileMap.topology.getWorldPosition(this)
+        val target = tileMap.topology.getWorldPosition(neighbor)
+        val dirX = target.x - origin.x
+        val dirY = target.y - origin.y
+
+        var leftNeighbor: Tile? = null
+        var rightNeighbor: Tile? = null
+        var bestLeftCross = -Float.MAX_VALUE
+        var bestRightCross = Float.MAX_VALUE
+        for (candidate in commonNeighbors) {
+            val candidatePos = tileMap.topology.getWorldPosition(candidate)
+            val vx = candidatePos.x - origin.x
+            val vy = candidatePos.y - origin.y
+            val cross = dirX * vy - dirY * vx
+            if (cross > bestLeftCross) {
+                bestLeftCross = cross
+                leftNeighbor = candidate
+            }
+            if (cross < bestRightCross) {
+                bestRightCross = cross
+                rightNeighbor = candidate
+            }
+        }
+        return (leftNeighbor ?: commonNeighbors.first()) to (rightNeighbor ?: commonNeighbors.last())
+    }
+
     private fun updateBorders() {
 
         // This is longer than it could be, because of performance -
@@ -80,8 +114,11 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
                 shouldRemoveBorderSegment = true
             }
             else if (neighborOwner != tileOwner) {
-                val leftSharedNeighbor = tile.getLeftSharedNeighbor(neighbor)
-                val rightSharedNeighbor = tile.getRightSharedNeighbor(neighbor)
+                val (leftSharedNeighbor, rightSharedNeighbor) =
+                    if (tile.tileMap.mapParameters.shape == MapShape.icosahedron)
+                        tile.getSharedNeighborsByGeometry(neighbor)
+                    else
+                        tile.getLeftSharedNeighbor(neighbor) to tile.getRightSharedNeighbor(neighbor)
 
                 // If a shared neighbor doesn't exist (because it's past a map edge), we act as if it's our tile for border concave/convex-ity purposes.
                 // This is because we do not draw borders against non-existing tiles either.
@@ -122,10 +159,16 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
                     else -> error("This shouldn't happen?")
                 }
 
-                val relativeWorldPosition = tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
-
-                val sign = if (relativeWorldPosition.x < 0) -1 else 1
-                val angle = sign * (atan(sign * relativeWorldPosition.y / relativeWorldPosition.x) * 180 / PI - 90.0).toFloat()
+                val relativeWorldPosition = if (tile.tileMap.mapParameters.shape == MapShape.icosahedron) {
+                    // Border images are already rotated with the icosahedron tile sprite.
+                    // Use topology world-space direction here to avoid applying the 30deg render rotation twice.
+                    val fromPos = tile.tileMap.topology.getWorldPosition(tile)
+                    val toPos = tile.tileMap.topology.getWorldPosition(neighbor)
+                    Vector2(toPos.x - fromPos.x, toPos.y - fromPos.y)
+                } else {
+                    tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
+                }
+                val angle = BorderEdgeGeometry.borderAngleDegrees(relativeWorldPosition)
 
                 val innerBorderImage = ImageGetter.getImage(
                     strings.orFallback { getBorder(borderShapeString,"Inner") }

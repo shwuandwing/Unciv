@@ -13,6 +13,7 @@ import com.unciv.ui.components.NonTransformGroup
 import com.unciv.ui.images.ClippingImage
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.screens.worldscreen.worldmap.WorldMapHolder
+import com.unciv.utils.DebugUtils
 import yairm210.purity.annotations.Pure
 import yairm210.purity.annotations.Readonly
 import kotlin.math.max
@@ -80,13 +81,29 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         val height: Float
         val width: Float
         val mapParameters = mapHolder.tileMap.mapParameters
+        val useExploredRegionBounds = civInfo != null && !DebugUtils.VISIBLE_MAP
 
-        if (civInfo != null) {
+        if (useExploredRegionBounds) {
+            if (mapParameters.shape == MapShape.icosahedron) {
+                val mapBounds = getRenderBounds(mapHolder.tileMap.topology.getWorldBounds())
+                val exploredBounds = civInfo.exploredRegion.getWorldBounds()
+                val renderExploredBounds = if (exploredBounds == null) null else getRenderBounds(exploredBounds)
+                val bounds = if (renderExploredBounds == null
+                    || renderExploredBounds.width <= 0f
+                    || renderExploredBounds.height <= 0f
+                    || renderExploredBounds.width >= mapBounds.width * 0.98f
+                ) mapBounds else renderExploredBounds
+                val padding = 1f
+                return min(
+                    minimapSize.x / ((bounds.width + padding) * 0.5f),
+                    minimapSize.y / ((bounds.height + padding) * 0.5f)
+                )
+            }
             height = civInfo.exploredRegion.getHeight().toFloat()
             width = civInfo.exploredRegion.getWidth().toFloat()
         } else {
             if (mapParameters.shape == MapShape.icosahedron) {
-                val bounds = mapHolder.tileMap.topology.getWorldBounds()
+                val bounds = getRenderBounds(mapHolder.tileMap.topology.getWorldBounds())
                 val padding = 1f
                 return min(
                     minimapSize.x / ((bounds.width + padding) * 0.5f),
@@ -153,7 +170,7 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         val mapParameters = mapHolder.tileMap.mapParameters
 
         if (mapParameters.shape == MapShape.icosahedron) {
-            val bounds = mapHolder.tileMap.topology.getWorldBounds()
+            val bounds = getRenderBounds(mapHolder.tileMap.topology.getWorldBounds())
             width = (bounds.width + 1f) * minimapTileSize * 0.5f
             height = (bounds.height + 1f) * minimapTileSize * 0.5f
             return Vector2(width, height)
@@ -175,6 +192,20 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         return Vector2(width, height)
     }
 
+    @Readonly
+    private fun getRenderBounds(bounds: Rectangle): Rectangle {
+        if (mapHolder.tileMap.mapParameters.shape != MapShape.icosahedron) return Rectangle(bounds)
+        val p1 = mapHolder.tileMap.worldToRenderCoords(Vector2(bounds.x, bounds.y))
+        val p2 = mapHolder.tileMap.worldToRenderCoords(Vector2(bounds.x + bounds.width, bounds.y))
+        val p3 = mapHolder.tileMap.worldToRenderCoords(Vector2(bounds.x, bounds.y + bounds.height))
+        val p4 = mapHolder.tileMap.worldToRenderCoords(Vector2(bounds.x + bounds.width, bounds.y + bounds.height))
+        val minX = min(min(p1.x, p2.x), min(p3.x, p4.x))
+        val maxX = max(max(p1.x, p2.x), max(p3.x, p4.x))
+        val minY = min(min(p1.y, p2.y), min(p3.y, p4.y))
+        val maxY = max(max(p1.y, p2.y), max(p3.y, p4.y))
+        return Rectangle(minX, minY, maxX - minX, maxY - minY)
+    }
+
     private fun createScrollPositionIndicators(): List<ClippingImage> {
         // If we are continuous scrolling (world wrap), add another 2 scrollPositionIndicators which
         // get drawn at proper offsets to simulate looping
@@ -189,18 +220,28 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
 
     private fun createMinimapTiles(tileSize: Float): List<MinimapTile> {
         val tiles = ArrayList<MinimapTile>()
+        val useExploredFilter = civInfo != null && !DebugUtils.VISIBLE_MAP
+        val exploredRegion = civInfo?.exploredRegion.takeIf { useExploredFilter }
+        val useUnwrappedIcoPlacement = useExploredFilter && mapHolder.tileMap.mapParameters.shape == MapShape.icosahedron
         val pad = when (mapHolder.tileMap.mapParameters.shape) {
             MapShape.icosahedron -> 0f
             MapShape.rectangular -> (mapHolder.tileMap.mapParameters.mapSize.width - 1f) * tileSize * 0.75f
             else -> mapHolder.tileMap.mapParameters.mapSize.radius * tileSize * 1.5f
         }
         val leftSide =
-                if (civInfo != null) civInfo.exploredRegion.getMinimapLeft(tileSize) else -Float.MAX_VALUE
+                exploredRegion?.getMinimapLeft(tileSize) ?: -Float.MAX_VALUE
         for (tileInfo in mapHolder.tileMap.values) {
-            if (civInfo?.exploredRegion?.isPositionInRegion(tileInfo.position) == false) continue
+            if (exploredRegion != null && !exploredRegion.isPositionInRegion(tileInfo.position)) continue
+            val worldPositionOverride = if (useUnwrappedIcoPlacement && exploredRegion != null) {
+                val worldPosition = tileInfo.tileMap.topology.getWorldPosition(tileInfo)
+                Vector2(
+                    exploredRegion.unwrapWorldLongitudeForRegion(worldPosition.x),
+                    worldPosition.y
+                )
+            } else null
             val minimapTile = MinimapTile(tileInfo, tileSize, onClick = {
                 mapHolder.setCenterPosition(tileInfo.position)
-            })
+            }, worldPositionOverride)
             if (minimapTile.image.x < leftSide)
                 minimapTile.image.x += pad
             tiles.add(minimapTile)
@@ -231,7 +272,7 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         val worldToMiniFactor: Vector2
         var miniViewport = worldViewport
 
-        if (civInfo != null) {
+        if (civInfo != null && !DebugUtils.VISIBLE_MAP) {
             if (civInfo.exploredRegion.shouldRecalculateCoords()) civInfo.exploredRegion.calculateStageCoords(
                 worldWidth,
                 worldHeight
