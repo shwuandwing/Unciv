@@ -21,6 +21,17 @@ object BorderEdgeGeometry {
         return direction.cpy().nor().scl(distance)
     }
 
+    /**
+     * Main-map border assets follow the legacy clock-vector orientation convention.
+     * For icosahedron we therefore use tile<-neighbor as angle direction.
+     */
+    fun mainMapIcosaAngleDirection(tileWorldPosition: Vector2, neighborWorldPosition: Vector2): Vector2 {
+        return Vector2(
+            tileWorldPosition.x - neighborWorldPosition.x,
+            tileWorldPosition.y - neighborWorldPosition.y
+        )
+    }
+
     fun isSegmentFacingNeighbor(
         angleDirection: Vector2,
         neighborDirectionInRenderSpace: Vector2,
