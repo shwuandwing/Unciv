@@ -13,8 +13,12 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.utils.Disposable
+import com.unciv.ui.components.tilegroups.TileSetStrings
+import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
+import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 
 class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
@@ -24,6 +28,10 @@ class IcosaGlobeActor(
     private val shapeRenderer = ShapeRenderer()
     private var tileMap = tileMapProvider()
     private var cache = IcosaMeshRuntimeCache.from(tileMap)
+    private var tileSetStrings = TileSetStrings(
+        requireNotNull(tileMap.ruleset) { "3D globe renderer requires tileMap.ruleset transients" },
+        com.unciv.UncivGame.Current.settings
+    )
 
     private val camera = PerspectiveCamera(42f, 1f, 1f)
     private val cameraController = GlobeCameraController(distance = 4.15f)
@@ -91,6 +99,10 @@ class IcosaGlobeActor(
         if (latestMap === tileMap) return
         tileMap = latestMap
         cache = IcosaMeshRuntimeCache.from(tileMap)
+        tileSetStrings = TileSetStrings(
+            requireNotNull(tileMap.ruleset) { "3D globe renderer requires tileMap.ruleset transients" },
+            com.unciv.UncivGame.Current.settings
+        )
         selectedTileIndex = -1
 
         projectedCenters = Array(tileMap.tileList.size) { Vector2() }
@@ -119,6 +131,7 @@ class IcosaGlobeActor(
         drawMarkers()
 
         batch.begin()
+        drawTerrainDetails(batch, parentAlpha)
     }
 
     private fun projectTiles() {
@@ -262,6 +275,57 @@ class IcosaGlobeActor(
             }
         }
         shapeRenderer.end()
+    }
+
+    private fun drawTerrainDetails(batch: Batch, parentAlpha: Float) {
+        val previousColor = Color(batch.color)
+        batch.color = Color.WHITE.cpy().apply { a = parentAlpha }
+
+        for (index in drawOrder) {
+            val polygon = projectedPolygons[index] ?: continue
+            val tile = tileMap.tileList[index]
+            val center = projectedCenters[index]
+
+            val locations = getTerrainDetailLocations(tile)
+            if (locations.isEmpty()) continue
+
+            val radius = min(
+                distanceToNearestCorner(center, polygon),
+                stage.viewport.worldHeight / 18f
+            )
+            val detailSize = max(2f, radius * 1.95f)
+            val x = center.x - detailSize / 2f
+            val y = center.y - detailSize / 2f
+
+            for (location in locations) {
+                if (!ImageGetter.imageExists(location)) continue
+                ImageGetter.getDrawable(location).draw(batch, x, y, detailSize, detailSize)
+            }
+        }
+
+        batch.color = previousColor
+    }
+
+    private fun distanceToNearestCorner(center: Vector2, polygon: FloatArray): Float {
+        var minDistance = Float.MAX_VALUE
+        for (i in 0 until polygon.size / 2) {
+            val dx = polygon[i * 2] - center.x
+            val dy = polygon[i * 2 + 1] - center.y
+            val distance = hypot(dx, dy)
+            if (distance < minDistance) minDistance = distance
+        }
+        return minDistance
+    }
+
+    private fun getTerrainDetailLocations(tile: Tile): List<String> {
+        return GlobeTerrainDetailResolver.resolveLocations(
+            baseTerrain = tile.baseTerrain,
+            terrainFeatures = tile.terrainFeatures,
+            naturalWonder = tile.naturalWonder,
+            getTile = { key -> tileSetStrings.getTile(key) },
+            orFallback = { key -> tileSetStrings.orFallback { getTile(key) } },
+            imageExists = { path -> ImageGetter.imageExists(path) }
+        )
     }
 
     private fun projectToStage(world: Vector3, out: Vector2): Vector2 {
