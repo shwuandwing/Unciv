@@ -29,6 +29,7 @@ import kotlin.random.Random
 
 class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
+    private val visibilityContextProvider: () -> GlobeVisibilityPolicy.Context = { GlobeVisibilityPolicy.Context() },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
     private val shapeRenderer = ShapeRenderer()
@@ -56,6 +57,8 @@ class IcosaGlobeActor(
     private var projectedFacing = FloatArray(tileMap.tileList.size)
     private var projectedOverlayRotations = FloatArray(tileMap.tileList.size)
     private var projectedDirectionalOverlayRotations = FloatArray(tileMap.tileList.size)
+    private var projectedTileExplored = BooleanArray(tileMap.tileList.size)
+    private var projectedTileVisible = BooleanArray(tileMap.tileList.size)
     private val drawOrder = ArrayList<Int>(tileMap.tileList.size)
 
     private val tempWorld = Vector3()
@@ -63,6 +66,7 @@ class IcosaGlobeActor(
     private val tempStage = Vector2()
     private val cameraDirectionFromOrigin = Vector3()
     private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
+    private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
 
     init {
         touchable = Touchable.enabled
@@ -123,6 +127,8 @@ class IcosaGlobeActor(
         projectedFacing = FloatArray(tileMap.tileList.size)
         projectedOverlayRotations = FloatArray(tileMap.tileList.size)
         projectedDirectionalOverlayRotations = FloatArray(tileMap.tileList.size)
+        projectedTileExplored = BooleanArray(tileMap.tileList.size)
+        projectedTileVisible = BooleanArray(tileMap.tileList.size)
         drawOrder.clear()
     }
 
@@ -160,6 +166,7 @@ class IcosaGlobeActor(
         camera.viewportHeight = stage.viewport.screenHeight.toFloat()
         cameraController.applyTo(camera)
         cameraDirectionFromOrigin.set(camera.position).nor()
+        val visibilityContext = visibilityContextProvider()
 
         for (tile in tileMap.tileList) {
             val index = tile.zeroBasedIndex
@@ -168,6 +175,9 @@ class IcosaGlobeActor(
             projectedFacing[index] = 0f
             projectedOverlayRotations[index] = 0f
             projectedDirectionalOverlayRotations[index] = 0f
+            val tileVisibility = GlobeVisibilityPolicy.resolve(tile, visibilityContext)
+            projectedTileExplored[index] = tileVisibility.isExplored
+            projectedTileVisible[index] = tileVisibility.isVisible
 
             val centerDirection = cache.centers[index]
             val facing = centerDirection.dot(cameraDirectionFromOrigin)
@@ -219,8 +229,15 @@ class IcosaGlobeActor(
             val polygon = projectedPolygons[index] ?: continue
             val tile = tileMap.tileList[index]
             val center = projectedCenters[index]
-            val color = GlobeRenderStateAdapter.tileFillColor(tile, tileSetStrings.tileSetConfig.useColorAsBaseTerrain)
-            if (index == selectedTileIndex) {
+            val color = if (!projectedTileExplored[index]) {
+                unexploredTileColor.cpy()
+            } else {
+                GlobeRenderStateAdapter.tileFillColor(tile, tileSetStrings.tileSetConfig.useColorAsBaseTerrain)
+            }
+            if (projectedTileExplored[index] && !projectedTileVisible[index]) {
+                color.lerp(tileSetStrings.tileSetConfig.fogOfWarColor.cpy(), 0.6f)
+            }
+            if (index == selectedTileIndex && projectedTileExplored[index]) {
                 color.lerp(Color.WHITE, 0.26f)
             }
             shapeRenderer.color = color
@@ -245,6 +262,7 @@ class IcosaGlobeActor(
         val gridColor = Color(0.07f, 0.09f, 0.12f, 0.1f)
 
         for (index in drawOrder) {
+            if (!projectedTileExplored[index]) continue
             val polygon = projectedPolygons[index] ?: continue
             val vertexCount = polygon.size / 2
             val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
@@ -304,6 +322,7 @@ class IcosaGlobeActor(
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
         for (index in drawOrder) {
+            if (!projectedTileVisible[index]) continue
             val tile = tileMap.tileList[index]
             val center = projectedCenters[index]
 
@@ -333,6 +352,8 @@ class IcosaGlobeActor(
     private fun drawPolygonTileOverlays(parentAlpha: Float) {
         polygonBatch.projectionMatrix = stage.camera.combined
         polygonBatch.begin()
+        val visibilityContext = visibilityContextProvider()
+        val viewingCiv = visibilityContext.viewingCiv
         for (index in drawOrder) {
             val polygon = projectedPolygons[index] ?: continue
             val tile = tileMap.tileList[index]
@@ -353,6 +374,16 @@ class IcosaGlobeActor(
                 facingDotCamera = projectedFacing[index]
             )
             if (max(detailLodAlpha, baseTerrainLodAlpha) <= 0.01f) continue
+            if (!projectedTileExplored[index]) {
+                drawUnexploredOverlay(
+                    tile = tile,
+                    polygon = polygon,
+                    center = center,
+                    rotation = rotation,
+                    parentAlpha = parentAlpha
+                )
+                continue
+            }
 
             val detailLayers = getTerrainDetailLocations(tile)
             for (location in detailLayers) {
@@ -369,7 +400,7 @@ class IcosaGlobeActor(
                 )
             }
 
-            val centerOverlays = getCenterOverlayLocations(tile)
+            val centerOverlays = getCenterOverlayLocations(tile, viewingCiv)
             for (overlay in centerOverlays) {
                 val overlayLodAlpha = if (overlay.isBaseTerrain) baseTerrainLodAlpha else detailLodAlpha
                 val overlayRotation = if (overlay.isDirectional) directionalRotation else rotation
@@ -392,6 +423,16 @@ class IcosaGlobeActor(
                     tile,
                     overlayRotation,
                     parentAlpha * overlayLodAlpha
+                )
+            }
+
+            if (!projectedTileVisible[index]) {
+                drawFogOverlay(
+                    tile = tile,
+                    polygon = polygon,
+                    center = center,
+                    rotation = rotation,
+                    parentAlpha = parentAlpha
                 )
             }
         }
@@ -420,6 +461,7 @@ class IcosaGlobeActor(
 
     private fun drawRoadOverlays(batch: Batch, index: Int, center: Vector2, detailSize: Float) {
         val tile = tileMap.tileList[index]
+        if (!projectedTileVisible[index]) return
         if (tile.roadStatus == RoadStatus.None) return
         val ring = cache.neighborRings[index]
         val roadThickness = max(1.6f, detailSize * 0.12f)
@@ -451,6 +493,56 @@ class IcosaGlobeActor(
                 rotation = angle
             )
         }
+    }
+
+    private fun drawUnexploredOverlay(
+        tile: Tile,
+        polygon: FloatArray,
+        center: Vector2,
+        rotation: Float,
+        parentAlpha: Float
+    ) {
+        if (!ImageGetter.imageExists(tileSetStrings.unexploredTile)) return
+        val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+        drawPolygonLocationIfExists(
+            overlay = GlobeCenterOverlayPolicy.Overlay(
+                location = tileSetStrings.unexploredTile,
+                isBaseTerrain = true
+            ),
+            polygon = polygon,
+            frameCenterX = frame.centerX,
+            frameCenterY = frame.centerY,
+            frameWidth = frame.width,
+            frameHeight = frame.height,
+            tile = tile,
+            rotation = rotation,
+            parentAlpha = parentAlpha
+        )
+    }
+
+    private fun drawFogOverlay(
+        tile: Tile,
+        polygon: FloatArray,
+        center: Vector2,
+        rotation: Float,
+        parentAlpha: Float
+    ) {
+        if (!ImageGetter.imageExists(tileSetStrings.crosshatchHexagon)) return
+        val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+        drawPolygonLocationIfExists(
+            overlay = GlobeCenterOverlayPolicy.Overlay(
+                location = tileSetStrings.crosshatchHexagon,
+                alpha = 0.2f
+            ),
+            polygon = polygon,
+            frameCenterX = frame.centerX,
+            frameCenterY = frame.centerY,
+            frameWidth = frame.width,
+            frameHeight = frame.height,
+            tile = tile,
+            rotation = rotation,
+            parentAlpha = parentAlpha
+        )
     }
 
     private fun drawRotatedRegion(
@@ -552,10 +644,14 @@ class IcosaGlobeActor(
         return available.random(Random(tile.position.hashCode() + baseLocation.hashCode()))
     }
 
-    private fun getCenterOverlayLocations(tile: Tile): List<GlobeCenterOverlayPolicy.Overlay> {
-        val shownImprovement = tile.getShownImprovement(null)
+    private fun getCenterOverlayLocations(
+        tile: Tile,
+        viewingCiv: com.unciv.logic.civilization.Civilization?
+    ): List<GlobeCenterOverlayPolicy.Overlay> {
+        val shownImprovement = tile.getShownImprovement(viewingCiv)
         val borderOverlays = getBorderOverlayLocations(tile)
         val directionalOverlays = borderOverlays.toHashSet()
+        val canSeeResource = viewingCiv == null || viewingCiv.canSeeResource(tile.tileResource)
         val fullLayers = GlobeTileOverlayResolver.resolveTerrainLayerLocations(
             baseTerrain = tile.baseTerrain,
             terrainFeatures = tile.terrainFeatures,
@@ -564,7 +660,7 @@ class IcosaGlobeActor(
             improvementIsPillaged = tile.improvementIsPillaged,
             resource = tile.resource,
             showPixelImprovements = UncivGame.Current.settings.showPixelImprovements,
-            canSeeResource = true,
+            canSeeResource = canSeeResource,
             useColorAsBaseTerrain = tileSetStrings.tileSetConfig.useColorAsBaseTerrain,
             useSummaryImages = tileSetStrings.tileSetConfig.useSummaryImages,
             hexagonLocation = tileSetStrings.hexagon,
@@ -678,6 +774,7 @@ class IcosaGlobeActor(
             val index = drawOrder[i]
             val polygon = projectedPolygons[index] ?: continue
             if (pointInPolygon(stageX, stageY, polygon)) {
+                if (!projectedTileExplored[index]) return null
                 return tileMap.tileList[index]
             }
         }
@@ -697,6 +794,7 @@ class IcosaGlobeActor(
             }
         }
         if (bestIndex >= 0 && bestDistance <= thresholdSq) {
+            if (!projectedTileExplored[bestIndex]) return null
             return tileMap.tileList[bestIndex]
         }
         return null
