@@ -382,7 +382,8 @@ class WorldScreen(
                     fogOfWarEnabled = fogOfWar,
                     viewingCiv = if (fogOfWar) selectedCiv else viewingCiv
                 )
-            }
+            },
+            selectedUnitProvider = { bottomUnitTable.selectedUnit }
         ) { tile -> onGlobeTileClicked(tile) }
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)
