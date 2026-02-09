@@ -1,11 +1,12 @@
 package com.unciv.ui.render.globe
 
 import com.badlogic.gdx.graphics.Color
+import com.unciv.Constants
 import com.unciv.logic.map.tile.Tile
 
 object GlobeRenderStateAdapter {
-    fun tileFillColor(tile: Tile): Color {
-        val base = tile.getBaseTerrain().getColor().cpy().lerp(Color.GRAY, 0.42f)
+    fun tileFillColor(tile: Tile, useColorAsBaseTerrain: Boolean): Color {
+        val base = baseTerrainColor(tile.baseTerrain, tile.getBaseTerrain().getColor(), useColorAsBaseTerrain)
 
         if (tile.terrainFeatures.isNotEmpty()) {
             base.lerp(Color(0.36f, 0.62f, 0.33f, 1f), 0.2f)
@@ -29,6 +30,18 @@ object GlobeRenderStateAdapter {
         }
 
         return base
+    }
+
+    fun baseTerrainColor(baseTerrain: String, terrainColor: Color, useColorAsBaseTerrain: Boolean): Color {
+        return if (useColorAsBaseTerrain) {
+            terrainColor.cpy().lerp(Color.GRAY, 0.42f)
+        } else {
+            when (baseTerrain) {
+                Constants.tundra -> Color(0.84f, 0.88f, 0.84f, 1f)
+                Constants.snow -> Color(0.94f, 0.96f, 0.98f, 1f)
+                else -> terrainColor.cpy().lerp(Color.GRAY, 0.35f)
+            }
+        }
     }
 
     fun borderColor(tile: Tile): Color? = tile.getOwner()?.nation?.getInnerColor()?.cpy()
