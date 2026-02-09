@@ -18,6 +18,7 @@ import com.unciv.logic.battle.Battle
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.battle.TargetHelper
 import com.unciv.logic.city.City
+import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.*
 import com.unciv.logic.map.mapunit.MapUnit
@@ -25,6 +26,7 @@ import com.unciv.logic.map.mapunit.movement.UnitMovement
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.Spy
 import com.unciv.models.UncivSound
+import com.unciv.models.UnitActionType
 import com.unciv.ui.audio.SoundPlayer
 import com.unciv.ui.components.MapArrowType
 import com.unciv.ui.components.MiscArrowTypes
@@ -42,6 +44,7 @@ import com.unciv.ui.components.tilegroups.WorldTileGroup
 import com.unciv.ui.components.widgets.UnitIconGroup
 import com.unciv.ui.components.widgets.ZoomableScrollPane
 import com.unciv.ui.screens.basescreen.UncivStage
+import com.unciv.ui.screens.overviewscreen.EspionageOverviewScreen
 import com.unciv.ui.screens.worldscreen.UndoHandler.Companion.recordUndoCheckpoint
 import com.unciv.ui.screens.worldscreen.WorldScreen
 import com.unciv.ui.screens.worldscreen.bottombar.BattleTableHelpers.battleAnimationDeferred
@@ -135,10 +138,7 @@ class WorldMapHolder(
     }
 
     fun onTileClicked(tile: Tile) {
-
-        if (!worldScreen.viewingCiv.hasExplored(tile)
-                && tile.neighbors.all { worldScreen.viewingCiv.hasExplored(it) })
-            return // This tile doesn't exist for you
+        if (!tileExistsForViewingCiv(tile)) return
 
         removeUnitActionOverlay()
         selectedTile = tile
@@ -201,13 +201,48 @@ class WorldMapHolder(
         worldScreen.shouldUpdate = true
     }
 
-    private fun onTileRightClicked(unit: MapUnit, tile: Tile) {
-        if (unit.currentTile.position == tile.position) return
+    fun onGlobeTileClicked(tile: Tile) {
+        if (!tileExistsForViewingCiv(tile)) return
+
+        val unitTable = worldScreen.bottomUnitTable
+        val selectedSpy = unitTable.selectedSpy
+        if (selectedSpy != null) {
+            val city = if (tile.isCityCenter()) tile.getCity() else null
+            if (city != null && selectedSpy.canMoveTo(city)) {
+                selectedSpy.moveTo(city)
+                worldScreen.game.pushScreen(EspionageOverviewScreen(worldScreen.selectedCiv, worldScreen))
+                removeUnitActionOverlay()
+                selectedTile = null
+                worldScreen.shouldUpdate = true
+                unitTable.selectSpy(null)
+                return
+            }
+        }
+
+        val selectedUnit = unitTable.selectedUnit
+        if (selectedUnit != null && selectedUnit.getTile() != tile && worldScreen.canChangeState) {
+            if (unitTable.selectedUnitIsConnectingRoad) {
+                if (connectRoadToTargetTile(selectedUnit, tile)) return
+            } else if (onTileRightClicked(selectedUnit, tile)) {
+                return
+            }
+        }
+
+        onTileClicked(tile)
+    }
+
+    private fun tileExistsForViewingCiv(tile: Tile): Boolean {
+        if (worldScreen.viewingCiv.hasExplored(tile)) return true
+        return tile.neighbors.any { worldScreen.viewingCiv.hasExplored(it) }
+    }
+
+    private fun onTileRightClicked(unit: MapUnit, tile: Tile): Boolean {
+        if (unit.currentTile.position == tile.position) return false
         removeUnitActionOverlay()
         selectedTile = tile
         unitMovementPaths.clear()
         unitConnectRoadPaths.clear()
-        if (!worldScreen.canChangeState) return
+        if (!worldScreen.canChangeState) return false
 
         // Concurrency might open up a race condition window - if worldScreen.shouldUpdate is on too
         // early, concurrent code might possibly call worldScreen.render() and then our request will be
@@ -216,6 +251,7 @@ class WorldMapHolder(
         // including its onClick closures which will be outdated if the user clicks Attack -> crash!
         var localShouldUpdate = worldScreen.shouldUpdate
         worldScreen.shouldUpdate = false
+        var handled = false
         // Below, there's 4 outcomes, one of which will have done nothing and will restore the old
         // shouldUpdate - maybe overkill done in a "better safe than sorry" mindset.
 
@@ -224,6 +260,7 @@ class WorldMapHolder(
             if (unit.movement.canUnitSwapTo(tile)) {
                 swapMoveUnitToTargetTile(unit, tile)
                 localShouldUpdate = true
+                handled = true
             }
             /** If we are in unit-swapping mode and didn't find a swap partner, we don't want to move or attack */
         } else {
@@ -234,20 +271,26 @@ class WorldMapHolder(
             if (unit.canAttack() && attackableTile != null) {
                 /** ****** Right-click Attack ****** */
                 val attacker = MapUnitCombatant(unit)
-                if (!Battle.movePreparingAttack(attacker, attackableTile)) return
+                if (!Battle.movePreparingAttack(attacker, attackableTile)) {
+                    worldScreen.shouldUpdate = localShouldUpdate
+                    return false
+                }
                 if (!SoundPlayer.play(UncivSound(attacker.getName())))
                     SoundPlayer.play(attacker.getAttackSound())
                 val (damageToDefender, damageToAttacker) = Battle.attackOrNuke(attacker, attackableTile)
                 if (attackableTile.combatant != null)
                     worldScreen.battleAnimationDeferred(attacker, damageToAttacker, attackableTile.combatant, damageToDefender)
                 localShouldUpdate = true
+                handled = true
             } else if (unit.movement.canReach(tile)) {
                 /** ****** Right-click Move ****** */
                 moveUnitToTargetTile(listOf(unit), tile)
                 localShouldUpdate = true
+                handled = true
             }
         }
         worldScreen.shouldUpdate = localShouldUpdate
+        return handled
     }
 
     private fun markUnitMoveTutorialComplete(unit: MapUnit) {
@@ -495,6 +538,26 @@ class WorldMapHolder(
                 }
             }
         }
+    }
+
+    internal fun connectRoadToTargetTile(selectedUnit: MapUnit, targetTile: Tile): Boolean {
+        val validTile = targetTile.isLand && !targetTile.isImpassible() && selectedUnit.civ.hasExplored(targetTile)
+        if (!validTile) return false
+        val roadPath = MapPathing.getRoadPath(selectedUnit.civ, selectedUnit.getTile(), targetTile) ?: return false
+        unitConnectRoadPaths[selectedUnit] = roadPath
+
+        selectedUnit.automatedRoadConnectionDestination = targetTile.position
+        selectedUnit.automatedRoadConnectionPath = null
+        selectedUnit.action = UnitActionType.ConnectRoad.value
+        selectedUnit.automated = true
+        UnitAutomation.automateUnitMoves(selectedUnit)
+
+        SoundPlayer.play(UncivSound("wagon"))
+
+        worldScreen.shouldUpdate = true
+        removeUnitActionOverlay()
+        worldScreen.bottomUnitTable.selectedUnitIsConnectingRoad = false
+        return true
     }
 
     private fun addMovingSpyOverlay(spy: Spy, tile: Tile) {

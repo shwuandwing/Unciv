@@ -176,7 +176,7 @@ class WorldScreen(
         stage.addActor(chatButton)
 
         stage.addActor(zoomController)
-        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isReadOnlyRenderMode()
+        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isGlobeRenderMode()
         zoomController.touchable = if (zoomController.isVisible) Touchable.enabled else Touchable.disabled
 
         stage.addActor(bottomUnitTable)
@@ -336,10 +336,18 @@ class WorldScreen(
         refreshRenderModeState()
     }
 
-    internal fun isReadOnlyRenderMode(): Boolean =
-        IcosaRenderModePolicy
-            .resolve(gameInfo.tileMap.mapParameters.shape, requestedRenderMode)
-            .isReadOnly
+    private fun resolveRenderModeState() = IcosaRenderModePolicy.resolve(
+        shape = gameInfo.tileMap.mapParameters.shape,
+        requestedMode = requestedRenderMode,
+        threeDReadOnly = false
+    )
+
+    private fun isGlobeRenderMode(): Boolean {
+        val state = resolveRenderModeState()
+        return state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+    }
+
+    internal fun isReadOnlyRenderMode(): Boolean = resolveRenderModeState().isReadOnly
 
     private fun addRenderModeToggle() {
         renderModeToggle.defaults().pad(2f)
@@ -375,27 +383,69 @@ class WorldScreen(
                     viewingCiv = if (fogOfWar) selectedCiv else viewingCiv
                 )
             }
-        ) { tile -> inspectTileInReadOnlyMode(tile) }
+        ) { tile -> onGlobeTileClicked(tile) }
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)
         globeActor = actor
     }
 
-    private fun inspectTileInReadOnlyMode(tile: com.unciv.logic.map.tile.Tile) {
-        mapHolder.removeUnitActionOverlay()
-        mapHolder.selectedTile = tile
-        bottomUnitTable.selectUnit()
-        bottomUnitTable.selectSpy(null)
-        shouldUpdate = true
+    private fun onGlobeTileClicked(tile: com.unciv.logic.map.tile.Tile) {
+        if (isReadOnlyRenderMode()) {
+            mapHolder.removeUnitActionOverlay()
+            mapHolder.selectedTile = tile
+            bottomUnitTable.selectUnit()
+            bottomUnitTable.selectSpy(null)
+            shouldUpdate = true
+            return
+        }
+        mapHolder.onGlobeTileClicked(tile)
     }
 
     private fun applyRenderModeTogglePosition() {
-        val targetY = if (topBar.isVisible) topBar.y - 8f else stage.height - 14f
-        renderModeToggle.setPosition(14f, targetY, Align.topLeft)
+        val margin = 14f
+        val spacing = 8f
+        val toggleWidth = renderModeToggle.width
+        val toggleHeight = renderModeToggle.height
+        var targetX = margin
+        var targetTopY = if (topBar.isVisible) topBar.y - spacing else stage.height - margin
+
+        val controlsVisible = uiEnabled
+            && techPolicyAndDiplomacy.isVisible
+            && techPolicyAndDiplomacy.width > 0f
+            && techPolicyAndDiplomacy.height > 0f
+        if (controlsVisible) {
+            val toggleLeft = targetX
+            val toggleRight = targetX + toggleWidth
+            val toggleBottom = targetTopY - toggleHeight
+            val toggleTop = targetTopY
+            val controlsLeft = techPolicyAndDiplomacy.x
+            val controlsRight = controlsLeft + techPolicyAndDiplomacy.width
+            val controlsBottom = techPolicyAndDiplomacy.y
+            val controlsTop = controlsBottom + techPolicyAndDiplomacy.height
+            val overlaps = toggleLeft < controlsRight
+                && toggleRight > controlsLeft
+                && toggleBottom < controlsTop
+                && toggleTop > controlsBottom
+            if (overlaps) {
+                targetX = controlsRight + spacing
+                val maxX = stage.width - margin - toggleWidth
+                if (targetX > maxX) {
+                    targetX = margin
+                    targetTopY = controlsBottom - spacing
+                }
+            }
+        }
+
+        val maxX = stage.width - margin - toggleWidth
+        val clampedX = if (maxX >= margin) targetX.coerceIn(margin, maxX) else margin
+        val minTopY = toggleHeight + margin
+        val maxTopY = stage.height - margin
+        val clampedTopY = if (maxTopY >= minTopY) targetTopY.coerceIn(minTopY, maxTopY) else maxTopY
+        renderModeToggle.setPosition(clampedX, clampedTopY, Align.topLeft)
     }
 
     private fun refreshRenderModeState() {
-        val state = IcosaRenderModePolicy.resolve(gameInfo.tileMap.mapParameters.shape, requestedRenderMode)
+        val state = resolveRenderModeState()
         requestedRenderMode = state.effectiveMode
         val use3D = state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
 
@@ -432,10 +482,8 @@ class WorldScreen(
             mapHolder.removeUnitActionOverlay()
             bottomUnitTable.selectUnit()
             bottomUnitTable.selectSpy(null)
-            stage.scrollFocus = globeActor
-        } else {
-            stage.scrollFocus = mapHolder
         }
+        stage.scrollFocus = if (use3D) globeActor else mapHolder
 
         addKeyboardListener()
     }
@@ -445,7 +493,7 @@ class WorldScreen(
             stage.removeListener(oldPanningListener)
             oldPanningListener.dispose()
         }
-        if (isReadOnlyRenderMode()) return
+        if (isGlobeRenderMode()) return
         stage.addListener(KeyboardPanningListener(mapHolder, allowWASD = true))
     }
 
@@ -530,7 +578,8 @@ class WorldScreen(
             )
         }
 
-        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons
+        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isGlobeRenderMode()
+        zoomController.touchable = if (zoomController.isVisible) Touchable.enabled else Touchable.disabled
 
         // if we use the clone, then when we update viewable tiles
         // it doesn't update the explored tiles of the civ... need to think about that harder
@@ -540,12 +589,12 @@ class WorldScreen(
         else mapHolder.updateTiles(viewingCiv)
 
         topBar.update(selectedCiv)
-        applyRenderModeTogglePosition()
         if (tutorialTaskTable.isVisible)
             tutorialTaskTable.y = topBar.getYForTutorialTask() - tutorialTaskTable.height
 
         if (techPolicyAndDiplomacy.update())
             displayTutorial(TutorialTrigger.OtherCivEncountered)
+        applyRenderModeTogglePosition()
 
         if (uiEnabled) {
             // UnitActionsTable measures geometry (its own y, techPolicyAndDiplomacy and fogOfWarButton), so call update this late
