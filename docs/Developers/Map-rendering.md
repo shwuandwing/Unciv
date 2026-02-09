@@ -103,6 +103,7 @@ These markers are only drawn on currently visible tiles (respecting fog visibili
 World-screen 3D mode now includes selected-unit navigation affordances:
 - reachable-tile highlight fill using current unit movement scope
 - hover path preview polyline from selected unit to hovered reachable tile
+- selected-city bombard range highlight and direct-click bombard execution on valid enemy targets
 
 These are driven from the same `UnitMovement.getDistanceToTiles()` data used by 2D logic, so interaction reachability stays consistent between render modes.
 
