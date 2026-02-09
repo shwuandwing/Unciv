@@ -55,6 +55,7 @@ Each frame:
 2. Draw base tile fill and ownership/grid borders via `ShapeRenderer`.
 3. Draw terrain/improvement/resource overlays as polygon-textured hexes via `PolygonSpriteBatch`.
 4. Draw road strips, ownership border strips, and sprite markers (resource/improvement/city/unit) via `Batch`.
+5. Draw world-screen city banners as screen-space overlays anchored to projected city centers.
 
 Overlays are mapped per projected polygon vertex, not stamped as rectangles. This avoids most limb distortion artifacts and keeps texture clipping inside each hex.
 
@@ -101,6 +102,13 @@ The 3D path now renders additional screen-facing sprite overlays for world/map p
 - world 3D unit status details: action badges (sleep/move/automate/etc.) and unit health bars
 
 These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
+
+For city-banner parity, the world 3D path reuses the same 2D city UI controls as screen-space overlays:
+- `DefenceTable`
+- `CityTable`
+- `InfluenceTable`
+- `StatusTable`
+This avoids drift between 2D and 3D city-banner styling/logic and keeps city info behavior aligned.
 
 ### World 3D action affordances
 
