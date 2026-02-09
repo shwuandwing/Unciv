@@ -3,6 +3,8 @@ package com.unciv.ui.screens.worldscreen
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
+import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.Align
 import com.unciv.Constants
@@ -30,11 +32,15 @@ import com.unciv.ui.components.input.KeyShortcutDispatcherVeto
 import com.unciv.ui.components.input.KeyboardBinding
 import com.unciv.ui.components.input.KeyboardPanningListener
 import com.unciv.ui.components.input.onClick
+import com.unciv.ui.components.extensions.toTextButton
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popups.AuthPopup
 import com.unciv.ui.popups.Popup
 import com.unciv.ui.popups.ToastPopup
 import com.unciv.ui.popups.hasOpenPopups
+import com.unciv.ui.render.globe.IcosaGlobeActor
+import com.unciv.ui.render.globe.IcosaRenderMode
+import com.unciv.ui.render.globe.IcosaRenderModePolicy
 import com.unciv.ui.screens.basescreen.BaseScreen
 import com.unciv.ui.screens.cityscreen.CityScreen
 import com.unciv.ui.screens.devconsole.DevConsolePopup
@@ -105,7 +111,7 @@ class WorldScreen(
 
     /** `true` when it's the player's turn unless he is a spectator */
     val canChangeState
-        get() = isPlayersTurn && !viewingCiv.isSpectator()
+        get() = isPlayersTurn && !viewingCiv.isSpectator() && !isReadOnlyRenderMode()
 
     val mapHolder = WorldMapHolder(this, gameInfo.tileMap)
 
@@ -131,6 +137,11 @@ class WorldScreen(
         background = skinStrings.getUiBackground("WorldScreen/TutorialTaskTable", tintColor = skinStrings.skinConfig.baseColor.darken(0.5f))
     }
     private var tutorialTaskTableHash = 0
+    private val renderModeToggle = Table(skin)
+    private val map2DButton = "2D".toTextButton()
+    private val map3DButton = "3D".toTextButton()
+    private var requestedRenderMode = IcosaRenderMode.TwoD
+    private var globeActor: IcosaGlobeActor? = null
 
     private var nextTurnUpdateJob: Job? = null
 
@@ -164,7 +175,8 @@ class WorldScreen(
         stage.addActor(chatButton)
 
         stage.addActor(zoomController)
-        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons
+        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isReadOnlyRenderMode()
+        zoomController.touchable = if (zoomController.isVisible) Touchable.enabled else Touchable.disabled
 
         stage.addActor(bottomUnitTable)
         stage.addActor(unitActionsTable)
@@ -173,6 +185,9 @@ class WorldScreen(
         battleTable.width = stage.width / 3
         battleTable.x = stage.width / 3
         stage.addActor(battleTable)
+        addRenderModeToggle()
+        rebuildGlobeActor()
+        refreshRenderModeState()
 
         val tileToCenterOn: HexCoord =
                 when {
@@ -209,6 +224,7 @@ class WorldScreen(
         }
 
         if (restoreState != null) restore(restoreState)
+        else refreshRenderModeState()
 
         // don't run update() directly, because the UncivGame.worldScreen should be set so that the city buttons and tile groups
         //  know what the viewing civ is.
@@ -218,6 +234,7 @@ class WorldScreen(
     override fun dispose() {
         resizeDeferTimer?.cancel()
         events.stopReceiving()
+        globeActor?.dispose()
         statusButtons.dispose()
         super.dispose()
     }
@@ -315,9 +332,113 @@ class WorldScreen(
         minimapWrapper.isVisible = uiEnabled
         bottomUnitTable.isVisible = uiEnabled
         if (uiEnabled) battleTable.update() else battleTable.isVisible = false
+        refreshRenderModeState()
+    }
+
+    internal fun isReadOnlyRenderMode(): Boolean =
+        IcosaRenderModePolicy
+            .resolve(gameInfo.tileMap.mapParameters.shape, requestedRenderMode)
+            .isReadOnly
+
+    private fun addRenderModeToggle() {
+        renderModeToggle.defaults().pad(2f)
+        renderModeToggle.background = BaseScreen.skinStrings.getUiBackground(
+            "MapEditor/RenderModeToggle",
+            tintColor = Color(0.1f, 0.1f, 0.16f, 0.82f)
+        )
+        map2DButton.onClick {
+            requestedRenderMode = IcosaRenderMode.TwoD
+            refreshRenderModeState()
+        }
+        map3DButton.onClick {
+            requestedRenderMode = IcosaRenderMode.ThreeD
+            refreshRenderModeState()
+        }
+        renderModeToggle.add(map2DButton).minWidth(54f)
+        renderModeToggle.add(map3DButton).minWidth(54f)
+        renderModeToggle.pack()
+        stage.addActor(renderModeToggle)
+    }
+
+    private fun rebuildGlobeActor() {
+        globeActor?.remove()
+        globeActor?.dispose()
+        globeActor = null
+        if (gameInfo.tileMap.mapParameters.shape != com.unciv.logic.map.MapShape.icosahedron) return
+
+        val actor = IcosaGlobeActor(tileMapProvider = { gameInfo.tileMap }) { tile ->
+            inspectTileInReadOnlyMode(tile)
+        }
+        actor.setSize(stage.width, stage.height)
+        stage.root.addActorAt(0, actor)
+        globeActor = actor
+    }
+
+    private fun inspectTileInReadOnlyMode(tile: com.unciv.logic.map.tile.Tile) {
+        mapHolder.removeUnitActionOverlay()
+        mapHolder.selectedTile = tile
+        bottomUnitTable.selectUnit()
+        bottomUnitTable.selectSpy(null)
+        shouldUpdate = true
+    }
+
+    private fun applyRenderModeTogglePosition() {
+        val targetY = if (topBar.isVisible) topBar.y - 8f else stage.height - 14f
+        renderModeToggle.setPosition(14f, targetY, Align.topLeft)
+    }
+
+    private fun refreshRenderModeState() {
+        val state = IcosaRenderModePolicy.resolve(gameInfo.tileMap.mapParameters.shape, requestedRenderMode)
+        requestedRenderMode = state.effectiveMode
+        val use3D = state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+
+        renderModeToggle.isVisible = uiEnabled && state.showToggle
+        renderModeToggle.touchable = if (renderModeToggle.isVisible) Touchable.enabled else Touchable.disabled
+        map2DButton.isDisabled = state.effectiveMode == IcosaRenderMode.TwoD
+        map3DButton.isDisabled = state.effectiveMode == IcosaRenderMode.ThreeD
+        map2DButton.color = if (state.effectiveMode == IcosaRenderMode.TwoD) Color.GOLD else Color.WHITE
+        map3DButton.color = if (state.effectiveMode == IcosaRenderMode.ThreeD) Color.GOLD else Color.WHITE
+        applyRenderModeTogglePosition()
+
+        mapHolder.isVisible = !use3D
+        mapHolder.touchable = if (use3D) Touchable.disabled else Touchable.enabled
+        globeActor?.isVisible = use3D
+        globeActor?.touchable = if (use3D) Touchable.enabled else Touchable.disabled
+
+        val readOnly = use3D && state.isReadOnly
+        val readOnlyTouchable = if (readOnly) Touchable.disabled else Touchable.enabled
+        techPolicyAndDiplomacy.touchable = readOnlyTouchable
+        statusButtons.touchable = readOnlyTouchable
+        bottomUnitTable.touchable = readOnlyTouchable
+        unitActionsTable.touchable = readOnlyTouchable
+        minimapWrapper.touchable = readOnlyTouchable
+        smallUnitButton.touchable = readOnlyTouchable
+        val readOnlyAlpha = if (readOnly) 0.6f else 1f
+        techPolicyAndDiplomacy.color.a = readOnlyAlpha
+        statusButtons.color.a = readOnlyAlpha
+        bottomUnitTable.color.a = readOnlyAlpha
+        unitActionsTable.color.a = readOnlyAlpha
+        minimapWrapper.color.a = readOnlyAlpha
+        smallUnitButton.color.a = readOnlyAlpha
+
+        if (readOnly) {
+            mapHolder.removeUnitActionOverlay()
+            bottomUnitTable.selectUnit()
+            bottomUnitTable.selectSpy(null)
+            stage.scrollFocus = globeActor
+        } else {
+            stage.scrollFocus = mapHolder
+        }
+
+        addKeyboardListener()
     }
 
     private fun addKeyboardListener() {
+        for (oldPanningListener in stage.root.listeners.filterIsInstance<KeyboardPanningListener>()) {
+            stage.removeListener(oldPanningListener)
+            oldPanningListener.dispose()
+        }
+        if (isReadOnlyRenderMode()) return
         stage.addListener(KeyboardPanningListener(mapHolder, allowWASD = true))
     }
 
@@ -412,6 +533,7 @@ class WorldScreen(
         else mapHolder.updateTiles(viewingCiv)
 
         topBar.update(selectedCiv)
+        applyRenderModeTogglePosition()
         if (tutorialTaskTable.isVisible)
             tutorialTaskTable.y = topBar.getYForTutorialTask() - tutorialTaskTable.height
 
@@ -549,7 +671,8 @@ class WorldScreen(
         mapHolder: WorldMapHolder,
         val selectedCivName: String,
         val viewingCivName: String,
-        val fogOfWar: Boolean
+        val fogOfWar: Boolean,
+        val requestedRenderMode: IcosaRenderMode
     ) {
         val zoom = mapHolder.scaleX
         val scrollX = mapHolder.scrollX
@@ -558,7 +681,7 @@ class WorldScreen(
     
     @Readonly
     fun getRestoreState(): RestoreState {
-        return RestoreState(mapHolder, selectedCiv.civID, viewingCiv.civID, fogOfWar)
+        return RestoreState(mapHolder, selectedCiv.civID, viewingCiv.civID, fogOfWar, requestedRenderMode)
     }
 
     private fun restore(restoreState: RestoreState) {
@@ -573,6 +696,8 @@ class WorldScreen(
 
         selectedCiv = gameInfo.getCivilization(restoreState.selectedCivName)
         fogOfWar = restoreState.fogOfWar
+        requestedRenderMode = restoreState.requestedRenderMode
+        refreshRenderModeState()
     }
 
     fun nextTurn() {

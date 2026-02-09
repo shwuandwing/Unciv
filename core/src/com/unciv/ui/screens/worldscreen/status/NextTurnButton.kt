@@ -39,6 +39,12 @@ class NextTurnButton(
     fun update() {
         nextTurnAction = getNextTurnAction(worldScreen)
         updateButton(nextTurnAction)
+        if (worldScreen.isReadOnlyRenderMode()) {
+            isEnabled = false
+            addTooltip("")
+            worldScreen.smallUnitButton.update()
+            return
+        }
         val autoPlay = worldScreen.autoPlay
         if (autoPlay.shouldContinueAutoPlaying() && worldScreen.isPlayersTurn
             && !worldScreen.waitingForAutosave && !worldScreen.isNextTurnUpdateRunning()) {
