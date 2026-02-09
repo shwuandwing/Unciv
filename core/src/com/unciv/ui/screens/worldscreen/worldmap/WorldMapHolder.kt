@@ -222,6 +222,26 @@ class WorldMapHolder(
             }
         }
 
+        val stackSelection = GlobeStackSelectionPolicy.resolveForRepeatedTileClick(
+            tile = tile,
+            viewingCiv = worldScreen.viewingCiv,
+            selectedUnit = unitTable.selectedUnit,
+            selectedCity = unitTable.selectedCity,
+            tileAlreadySelected = selectedTile == tile
+        )
+        if (stackSelection != null) {
+            removeUnitActionOverlay()
+            selectedTile = tile
+            unitMovementPaths.clear()
+            unitConnectRoadPaths.clear()
+            when (stackSelection) {
+                is GlobeStackSelectionPolicy.Selection.SelectCity -> unitTable.citySelected(stackSelection.city)
+                is GlobeStackSelectionPolicy.Selection.SelectUnit -> unitTable.tileSelected(tile, forceSelectUnit = stackSelection.unit)
+            }
+            worldScreen.shouldUpdate = true
+            return
+        }
+
         val selectedCity = unitTable.selectedCity
         if (selectedCity != null && selectedCity.getCenterTile() != tile && worldScreen.canChangeState) {
             if (onTileBombardedByCity(selectedCity, tile)) {
