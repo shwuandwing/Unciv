@@ -94,8 +94,17 @@ The 3D path now renders additional screen-facing sprite overlays for world/map p
 - improvement icons (`ImprovementIcons/*`) with neutral/pillaged backing
 - city icons (`NationIcons/*` fallback)
 - unit icons (`UnitIcons/*` then `UnitTypeIcons/*` fallback) with civ-colored rings
+- tile yield icons (`StatIcons/*`) in world 3D mode when `showTileYields` is enabled
 
 These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
+
+### World 3D action affordances
+
+World-screen 3D mode now includes selected-unit navigation affordances:
+- reachable-tile highlight fill using current unit movement scope
+- hover path preview polyline from selected unit to hovered reachable tile
+
+These are driven from the same `UnitMovement.getDistanceToTiles()` data used by 2D logic, so interaction reachability stays consistent between render modes.
 
 ### Test coverage
 

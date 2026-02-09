@@ -32,6 +32,7 @@ import kotlin.random.Random
 class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
     private val visibilityContextProvider: () -> GlobeVisibilityPolicy.Context = { GlobeVisibilityPolicy.Context() },
+    private val selectedUnitProvider: () -> MapUnit? = { null },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
     private data class UnitVisual(
@@ -56,6 +57,7 @@ class IcosaGlobeActor(
     private var wasDragging = false
     private var lastX = 0f
     private var lastY = 0f
+    private var hoveredTileIndex = -1
 
     private var projectedCenters = Array(tileMap.tileList.size) { Vector2() }
     private var projectedPolygons = arrayOfNulls<FloatArray>(tileMap.tileList.size)
@@ -97,6 +99,7 @@ class IcosaGlobeActor(
                 cameraController.rotateBy(deltaX, deltaY)
                 lastX = x
                 lastY = y
+                hoveredTileIndex = -1
             }
 
             override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
@@ -107,12 +110,19 @@ class IcosaGlobeActor(
                 val stageCoords = localToStageCoordinates(Vector2(x, y))
                 val tile = pickTile(stageCoords.x, stageCoords.y) ?: return
                 selectedTileIndex = tile.zeroBasedIndex
+                hoveredTileIndex = tile.zeroBasedIndex
                 onTileClick(tile)
             }
 
             override fun scrolled(event: InputEvent, x: Float, y: Float, amountX: Float, amountY: Float): Boolean {
                 cameraController.zoomBy(amountY)
                 return true
+            }
+
+            override fun mouseMoved(event: InputEvent, x: Float, y: Float): Boolean {
+                val stageCoords = localToStageCoordinates(Vector2(x, y))
+                hoveredTileIndex = pickTile(stageCoords.x, stageCoords.y)?.zeroBasedIndex ?: -1
+                return false
             }
         })
     }
@@ -128,6 +138,7 @@ class IcosaGlobeActor(
         )
         overlayRegionCache.clear()
         selectedTileIndex = -1
+        hoveredTileIndex = -1
 
         projectedCenters = Array(tileMap.tileList.size) { Vector2() }
         projectedPolygons = arrayOfNulls<FloatArray>(tileMap.tileList.size)
@@ -148,6 +159,7 @@ class IcosaGlobeActor(
     override fun draw(batch: Batch, parentAlpha: Float) {
         refreshTileMap()
         projectTiles()
+        val selectedUnit = selectedUnitProvider()
 
         batch.end()
 
@@ -156,7 +168,9 @@ class IcosaGlobeActor(
 
         shapeRenderer.projectionMatrix = stage.camera.combined
         drawTileSurface()
+        drawSelectedUnitReachableOverlay(selectedUnit)
         drawBorders()
+        drawSelectedUnitPathPreview(selectedUnit)
 
         drawPolygonTileOverlays(parentAlpha)
 
@@ -298,6 +312,63 @@ class IcosaGlobeActor(
         shapeRenderer.end()
     }
 
+    private fun drawSelectedUnitReachableOverlay(selectedUnit: MapUnit?) {
+        if (selectedUnit == null || !selectedUnit.hasTile()) return
+        val movementScope = selectedUnit.movement.getDistanceToTiles()
+        if (movementScope.isEmpty()) return
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        for (index in drawOrder) {
+            if (!projectedTileVisible[index]) continue
+            val tile = tileMap.tileList[index]
+            if (tile == selectedUnit.currentTile) continue
+            if (!movementScope.containsKey(tile)) continue
+            val polygon = projectedPolygons[index] ?: continue
+            val center = projectedCenters[index]
+            val alpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = 18f,
+                frameHeight = 18f,
+                facingDotCamera = projectedFacing[index]
+            ) * 0.22f
+            if (alpha <= 0.01f) continue
+            shapeRenderer.color.set(0.92f, 0.98f, 1f, alpha)
+
+            val vertexCount = polygon.size / 2
+            for (i in 0 until vertexCount) {
+                val next = (i + 1) % vertexCount
+                shapeRenderer.triangle(
+                    center.x,
+                    center.y,
+                    polygon[i * 2],
+                    polygon[i * 2 + 1],
+                    polygon[next * 2],
+                    polygon[next * 2 + 1]
+                )
+            }
+        }
+        shapeRenderer.end()
+    }
+
+    private fun drawSelectedUnitPathPreview(selectedUnit: MapUnit?) {
+        if (selectedUnit == null || !selectedUnit.hasTile()) return
+        if (hoveredTileIndex !in tileMap.tileList.indices) return
+        val targetTile = tileMap.tileList[hoveredTileIndex]
+        val movementScope = selectedUnit.movement.getDistanceToTiles()
+        if (!movementScope.containsKey(targetTile)) return
+        val path = movementScope.getPathToTile(targetTile)
+        if (path.isEmpty()) return
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = Color(0.98f, 1f, 1f, 0.9f)
+        var previousCenter = projectedCenters[selectedUnit.currentTile.zeroBasedIndex]
+        for (tile in path) {
+            val currentCenter = projectedCenters[tile.zeroBasedIndex]
+            shapeRenderer.line(previousCenter.x, previousCenter.y, currentCenter.x, currentCenter.y)
+            previousCenter = currentCenter
+        }
+        shapeRenderer.end()
+    }
+
     private fun drawOwnershipBorderSprites(batch: Batch, parentAlpha: Float) {
         val whiteDot = getRegion(ImageGetter.whiteDotLocation) ?: return
         val previousColor = Color(batch.color)
@@ -356,6 +427,7 @@ class IcosaGlobeActor(
         val previousColor = Color(batch.color)
         val viewingCiv = visibilityContextProvider().viewingCiv
         val showResourceAndImprovementIcons = viewingCiv == null || UncivGame.Current.settings.showResourcesAndImprovements
+        val showTileYields = viewingCiv != null && UncivGame.Current.settings.showTileYields
 
         for (index in drawOrder) {
             if (!projectedTileVisible[index]) continue
@@ -373,6 +445,9 @@ class IcosaGlobeActor(
             if (lodAlpha <= 0.01f) continue
 
             val markerAlpha = parentAlpha * lodAlpha
+            if (showTileYields) {
+                drawYieldMarkers(batch, tile, center, detailSize, markerAlpha, viewingCiv)
+            }
             if (showResourceAndImprovementIcons) {
                 drawResourceMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
                 drawImprovementMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
@@ -382,6 +457,37 @@ class IcosaGlobeActor(
         }
 
         batch.color = previousColor
+    }
+
+    private fun drawYieldMarkers(
+        batch: Batch,
+        tile: Tile,
+        center: Vector2,
+        detailSize: Float,
+        alpha: Float,
+        viewingCiv: Civilization
+    ) {
+        if (detailSize < 18f) return
+        val yieldIcons = GlobeYieldOverlayPolicy.resolve(tile.stats.getTileStats(viewingCiv), maxIcons = 3)
+        if (yieldIcons.isEmpty()) return
+        val iconSize = detailSize * 0.15f
+        val spacing = detailSize * 0.17f
+        val baseY = center.y - detailSize * 0.30f
+        val startX = center.x - spacing * (yieldIcons.size - 1) / 2f
+
+        for ((index, icon) in yieldIcons.withIndex()) {
+            val region = getRegion(icon.iconLocation) ?: continue
+            drawCenteredRegion(
+                batch = batch,
+                region = region,
+                centerX = startX + index * spacing,
+                centerY = baseY,
+                width = iconSize,
+                height = iconSize,
+                color = Color.WHITE,
+                alpha = alpha
+            )
+        }
     }
 
     private fun drawResourceMarker(
