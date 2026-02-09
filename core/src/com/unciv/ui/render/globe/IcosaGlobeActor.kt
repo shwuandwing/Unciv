@@ -5,7 +5,6 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g2d.Batch
-import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
@@ -15,23 +14,29 @@ import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
+import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.Disposable
 import com.unciv.UncivGame
-import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.NeighborDirection
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.RoadStatus
-import com.unciv.models.translations.tr
-import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.components.tilegroups.TileSetStrings
+import com.unciv.ui.components.tilegroups.citybutton.CityTable
+import com.unciv.ui.components.tilegroups.citybutton.DefenceTable
+import com.unciv.ui.components.tilegroups.citybutton.InfluenceTable
+import com.unciv.ui.components.tilegroups.citybutton.StatusTable
+import com.unciv.ui.components.tilegroups.layers.BorderEdgeGeometry
 import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
+import com.unciv.ui.screens.basescreen.BaseScreen
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 class IcosaGlobeActor(
@@ -42,9 +47,14 @@ class IcosaGlobeActor(
     private val selectedCivProvider: () -> Civilization? = { null },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
-    private data class UnitVisual(
+        private data class UnitVisual(
         val unit: MapUnit,
         val yOffsetFactor: Float
+    )
+
+    private data class CityBannerWidget(
+        val root: Table,
+        val cityTable: CityTable
     )
 
     private val shapeRenderer = ShapeRenderer()
@@ -84,7 +94,6 @@ class IcosaGlobeActor(
     private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
-    private val bannerTextLayout = GlyphLayout()
 
     init {
         touchable = Touchable.enabled
@@ -911,206 +920,88 @@ class IcosaGlobeActor(
     }
 
     private fun drawCityBanners(batch: Batch, parentAlpha: Float, selectedCity: City?) {
-        val cityBackground = getRegion(ImageGetter.whiteDotLocation) ?: return
-        val capitalRegion = getRegion("OtherIcons/Capital")
+        val selectedPlayer = selectedCivProvider()
+        val visibilityContext = visibilityContextProvider()
+        val viewingPlayer = visibilityContext.viewingCiv
         val previousColor = Color(batch.color)
-        val font = Fonts.font
-        val originalScaleX = font.data.scaleX
-        val originalScaleY = font.data.scaleY
-        val originalColor = Color(font.color)
-        val selectedCiv = selectedCivProvider()
 
-        try {
-            for (index in drawOrder) {
-                if (!projectedTileVisible[index]) continue
-                val tile = tileMap.tileList[index]
-                if (!tile.isCityCenter()) continue
-                val city = tile.getCity() ?: continue
-                val style = GlobeCityBannerStylePolicy.resolve(city, selectedCiv)
-                val polygon = projectedPolygons[index] ?: continue
-                val center = projectedCenters[index]
-                val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
-                val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
-                val detailSize = min(frame.width, frame.height)
-                val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
-                    frameWidth = frame.width,
-                    frameHeight = frame.height,
-                    facingDotCamera = projectedFacing[index]
-                )
-                if (lodAlpha <= 0.06f) continue
-                val alpha = parentAlpha * lodAlpha
-
-                val fontSize = (detailSize * 0.23f).coerceIn(9f, 18f)
-                font.data.setScale(fontSize / Fonts.ORIGINAL_FONT_SIZE)
-                val centerX = center.x
-
-                val populationText = city.population.population.tr()
-                val cityName = city.name
-                bannerTextLayout.setText(font, populationText)
-                val popWidth = bannerTextLayout.width
-                bannerTextLayout.setText(font, cityName)
-                val nameWidth = bannerTextLayout.width
-
-                val capitalSize = if (city.isCapital() && capitalRegion != null) fontSize * 1.05f else 0f
-                val paddingX = fontSize * 0.42f
-                val gap = fontSize * 0.34f
-                val bannerHeight = (fontSize * 1.55f).coerceIn(14f, 36f)
-                val bannerWidth = paddingX * 2f + popWidth + nameWidth + gap * 2f + if (capitalSize > 0f) capitalSize + gap else 0f
-                val bannerX = centerX - bannerWidth / 2f
-                val bannerY = center.y + detailSize * 0.25f
-
-                batch.color.set(style.borderColor.r, style.borderColor.g, style.borderColor.b, alpha * 0.95f)
-                batch.draw(cityBackground, bannerX - 1.6f, bannerY - 1.6f, bannerWidth + 3.2f, bannerHeight + 3.2f)
-
-                batch.color.set(style.backgroundColor.r, style.backgroundColor.g, style.backgroundColor.b, alpha * 0.9f)
-                batch.draw(cityBackground, bannerX, bannerY, bannerWidth, bannerHeight)
-
-                font.color.set(style.textColor.r, style.textColor.g, style.textColor.b, alpha)
-                val baselineY = bannerY + bannerHeight / 2f + font.capHeight / 2.2f
-                var cursorX = bannerX + paddingX
-                font.draw(batch, populationText, cursorX, baselineY)
-                cursorX += popWidth + gap
-
-                if (capitalSize > 0f && capitalRegion != null) {
-                    drawCenteredRegion(
-                        batch = batch,
-                        region = capitalRegion,
-                        centerX = cursorX + capitalSize / 2f,
-                        centerY = bannerY + bannerHeight / 2f,
-                        width = capitalSize,
-                        height = capitalSize,
-                        color = style.textColor,
-                        alpha = alpha
-                    )
-                    cursorX += capitalSize + gap
-                }
-                font.draw(batch, cityName, cursorX, baselineY)
-
-                drawCityDefenceBadge(
-                    batch = batch,
-                    city = city,
-                    selectedCiv = selectedCiv,
-                    centerX = centerX,
-                    topY = bannerY + bannerHeight + fontSize * 0.08f,
-                    font = font,
-                    alpha = alpha
-                )
-                drawCityStatusIcons(
-                    batch = batch,
-                    city = city,
-                    selectedCiv = selectedCiv,
-                    centerX = centerX,
-                    y = bannerY - fontSize * 0.42f,
-                    iconSize = (fontSize * 0.95f).coerceIn(8f, 18f),
-                    alpha = alpha
-                )
-                drawCityHealthBar(
-                    batch = batch,
-                    city = city,
-                    centerX = centerX,
-                    y = bannerY + bannerHeight - 2.8f,
-                    width = bannerWidth * 0.74f,
-                    alpha = alpha
-                )
-            }
-        } finally {
-            font.data.setScale(originalScaleX, originalScaleY)
-            font.color.set(originalColor)
-            batch.color = previousColor
-        }
-    }
-
-    private fun drawCityDefenceBadge(
-        batch: Batch,
-        city: City,
-        selectedCiv: Civilization?,
-        centerX: Float,
-        topY: Float,
-        font: com.badlogic.gdx.graphics.g2d.BitmapFont,
-        alpha: Float
-    ) {
-        val background = getRegion(ImageGetter.whiteDotLocation) ?: return
-        val strength = CityCombatant(city).getDefendingStrength()
-        val text = "${Fonts.strength}$strength"
-        bannerTextLayout.setText(font, text)
-        val paddingX = 5.2f
-        val width = max(26f, bannerTextLayout.width + paddingX * 2f)
-        val height = max(12f, font.capHeight + 4.5f)
-        val x = centerX - width / 2f
-        val y = topY
-
-        val borderColor = when {
-            selectedCiv == null -> Color(0.12f, 0.12f, 0.14f, 1f)
-            city.civ == selectedCiv -> Color.valueOf("#E9E9AC")
-            city.civ.isAtWarWith(selectedCiv) -> Color.valueOf("#E63200")
-            else -> Color(0.12f, 0.12f, 0.14f, 1f)
-        }
-
-        batch.color.set(borderColor.r, borderColor.g, borderColor.b, alpha * 0.95f)
-        batch.draw(background, x - 1.4f, y - 1.4f, width + 2.8f, height + 2.8f)
-        batch.color.set(0.08f, 0.08f, 0.1f, alpha * 0.95f)
-        batch.draw(background, x, y, width, height)
-
-        font.color.set(1f, 1f, 1f, alpha)
-        font.draw(
-            batch,
-            text,
-            centerX - bannerTextLayout.width / 2f,
-            y + height / 2f + font.capHeight / 2.3f
-        )
-    }
-
-    private fun drawCityStatusIcons(
-        batch: Batch,
-        city: City,
-        selectedCiv: Civilization?,
-        centerX: Float,
-        y: Float,
-        iconSize: Float,
-        alpha: Float
-    ) {
-        if (selectedCiv == null) return
-        val iconLocations = GlobeCityStatusOverlayPolicy.resolveStatusIcons(city, selectedCiv)
-        if (iconLocations.isEmpty()) return
-
-        val spacing = iconSize * 1.08f
-        val startX = centerX - spacing * (iconLocations.size - 1) / 2f
-        for ((index, location) in iconLocations.withIndex()) {
-            val region = getRegion(location) ?: continue
-            drawCenteredRegion(
-                batch = batch,
-                region = region,
-                centerX = startX + index * spacing,
-                centerY = y,
-                width = iconSize,
-                height = iconSize,
-                color = Color.WHITE,
-                alpha = alpha
+        for (index in drawOrder) {
+            if (!projectedTileVisible[index]) continue
+            val tile = tileMap.tileList[index]
+            if (!tile.isCityCenter()) continue
+            val city = tile.getCity() ?: continue
+            val polygon = projectedPolygons[index] ?: continue
+            val center = projectedCenters[index]
+            val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
+            val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+            val detailSize = min(frame.width, frame.height)
+            val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = frame.width,
+                frameHeight = frame.height,
+                facingDotCamera = projectedFacing[index]
             )
+            if (lodAlpha <= 0.06f) continue
+            val alpha = parentAlpha * lodAlpha
+            val selectedCiv = selectedPlayer ?: city.civ
+            val viewingCiv = viewingPlayer ?: selectedCiv
+            val widget = buildCityBannerWidget(city, selectedCiv, viewingCiv)
+            widget.root.pack()
+            widget.root.setPosition(
+                center.x - widget.root.width / 2f,
+                center.y + detailSize * 0.25f
+            )
+            widget.root.color.a = alpha
+            widget.root.draw(batch, 1f)
+            drawCityHealthBarWidget(batch, city, widget, alpha)
         }
+
+        batch.color = previousColor
     }
 
-    private fun drawCityHealthBar(
+    private fun buildCityBannerWidget(
+        city: City,
+        selectedCiv: Civilization,
+        viewingCiv: Civilization
+    ): CityBannerWidget {
+        val root = Table(BaseScreen.skin).apply {
+            isTransform = false
+            touchable = Touchable.disabled
+        }
+        val defence = DefenceTable(city, selectedCiv)
+        val cityTable = CityTable(city, viewingCiv)
+        root.add(defence).row()
+        root.add(cityTable).row()
+        if (city.civ.isCityState && city.civ.knows(selectedCiv)) {
+            val diplomacyManager = city.civ.getDiplomacyManager(selectedCiv)
+            if (diplomacyManager != null) {
+                root.add(InfluenceTable(diplomacyManager.getInfluence(), diplomacyManager.relationshipLevel()))
+                    .padTop(1f)
+                    .row()
+            }
+        }
+        root.add(StatusTable(city, selectedCiv)).padTop(3f)
+        return CityBannerWidget(root = root, cityTable = cityTable)
+    }
+
+    private fun drawCityHealthBarWidget(
         batch: Batch,
         city: City,
-        centerX: Float,
-        y: Float,
-        width: Float,
+        widget: CityBannerWidget,
         alpha: Float
     ) {
         val maxHealth = city.getMaxHealth().toFloat()
         if (maxHealth <= 0f || city.health >= maxHealth) return
-        val healthPercent = (city.health / maxHealth).coerceIn(0f, 1f)
-        val height = 3.2f
-        val x = centerX - width / 2f
-        val bg = getRegion(ImageGetter.whiteDotLocation) ?: return
-
-        batch.color.set(0f, 0f, 0f, alpha * 0.78f)
-        batch.draw(bg, x - 0.6f, y - 0.6f, width + 1.2f, height + 1.2f)
-        batch.color.set(0.74f, 0.13f, 0.13f, alpha * 0.95f)
-        batch.draw(bg, x, y, width, height)
-        batch.color.set(0.22f, 0.84f, 0.22f, alpha * 0.95f)
-        batch.draw(bg, x, y, width * healthPercent, height)
+        val healthBar = ImageGetter.getHealthBar(
+            city.health.toFloat(),
+            maxHealth,
+            100f,
+            3f
+        )
+        val healthX = widget.root.x + widget.cityTable.x + widget.cityTable.width / 2f - healthBar.width / 2f
+        val healthY = widget.root.y + widget.cityTable.y + widget.cityTable.height - healthBar.height - 1f
+        healthBar.setPosition(healthX, healthY)
+        healthBar.color.a = alpha
+        healthBar.draw(batch, 1f)
     }
 
     private fun drawCenteredRegion(
