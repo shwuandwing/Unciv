@@ -384,7 +384,8 @@ class WorldScreen(
                 )
             },
             selectedUnitProvider = { bottomUnitTable.selectedUnit },
-            selectedCityProvider = { bottomUnitTable.selectedCity }
+            selectedCityProvider = { bottomUnitTable.selectedCity },
+            selectedCivProvider = { selectedCiv }
         ) { tile -> onGlobeTileClicked(tile) }
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)

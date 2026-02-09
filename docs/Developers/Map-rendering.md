@@ -94,10 +94,11 @@ The 3D path now renders additional screen-facing sprite overlays for world/map p
 - resource icons (`ResourceIcons/*`) with resource-type circle backing
 - improvement icons (`ImprovementIcons/*`) with neutral/pillaged backing
 - city icons (`NationIcons/*` fallback)
-- pixel unit sprites from the active tileset (`TileSets/*/Units/*`) when `showPixelUnits` is enabled
+- pixel unit sprites from the active tileset (`TileSets/*/Units/*`) with unit-icon fallback when sprite layers are unavailable
 - fallback unit icons (`UnitIcons/*` then `UnitTypeIcons/*`) with civ-colored rings when pixel sprites are unavailable
 - tile yield icons (`StatIcons/*`) in world 3D mode when `showTileYields` is enabled
-- simplified city banners in world 3D mode (population, capital indicator, city name)
+- world 3D city banner details: population, capital indicator, defense badge, damage bar, and status icons (blockade/connection/resistance/puppet/raze/WLTKD)
+- world 3D unit status details: action badges (sleep/move/automate/etc.) and unit health bars
 
 These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
 
