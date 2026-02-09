@@ -15,6 +15,8 @@ import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.math.Interpolation
 import com.unciv.UncivGame
 import com.unciv.logic.battle.Battle
+import com.unciv.logic.battle.AttackableTile
+import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.battle.TargetHelper
 import com.unciv.logic.city.City
@@ -45,6 +47,7 @@ import com.unciv.ui.components.widgets.UnitIconGroup
 import com.unciv.ui.components.widgets.ZoomableScrollPane
 import com.unciv.ui.screens.basescreen.UncivStage
 import com.unciv.ui.screens.overviewscreen.EspionageOverviewScreen
+import com.unciv.ui.screens.worldscreen.UndoHandler.Companion.clearUndoCheckpoints
 import com.unciv.ui.screens.worldscreen.UndoHandler.Companion.recordUndoCheckpoint
 import com.unciv.ui.screens.worldscreen.WorldScreen
 import com.unciv.ui.screens.worldscreen.bottombar.BattleTableHelpers.battleAnimationDeferred
@@ -219,6 +222,13 @@ class WorldMapHolder(
             }
         }
 
+        val selectedCity = unitTable.selectedCity
+        if (selectedCity != null && selectedCity.getCenterTile() != tile && worldScreen.canChangeState) {
+            if (onTileBombardedByCity(selectedCity, tile)) {
+                return
+            }
+        }
+
         val selectedUnit = unitTable.selectedUnit
         if (selectedUnit != null && selectedUnit.getTile() != tile && worldScreen.canChangeState) {
             if (unitTable.selectedUnitIsConnectingRoad) {
@@ -229,6 +239,32 @@ class WorldMapHolder(
         }
 
         onTileClicked(tile)
+    }
+
+    private fun onTileBombardedByCity(city: City, targetTile: Tile): Boolean {
+        if (!city.canBombard()) return false
+        if (!TargetHelper.getBombardableTiles(city).contains(targetTile)) return false
+        val defender = Battle.getMapCombatantOfTile(targetTile) ?: return false
+        if (defender.getCivInfo() == city.civ) return false
+        if (!defender.getCivInfo().isAtWarWith(city.civ)) return false
+
+        removeUnitActionOverlay()
+        selectedTile = targetTile
+        unitMovementPaths.clear()
+        unitConnectRoadPaths.clear()
+
+        val attacker = CityCombatant(city)
+        val attackableTile = AttackableTile(attacker.getTile(), targetTile, 0f, defender)
+        val canStillAttack = Battle.movePreparingAttack(attacker, attackableTile)
+        worldScreen.shouldUpdate = true
+        worldScreen.clearUndoCheckpoints()
+        if (!canStillAttack) return false
+
+        if (!SoundPlayer.play(UncivSound(attacker.getName())))
+            SoundPlayer.play(attacker.getAttackSound())
+        val (damageToDefender, damageToAttacker) = Battle.attackOrNuke(attacker, attackableTile)
+        worldScreen.battleAnimationDeferred(attacker, damageToAttacker, defender, damageToDefender)
+        return true
     }
 
     private fun tileExistsForViewingCiv(tile: Tile): Boolean {
