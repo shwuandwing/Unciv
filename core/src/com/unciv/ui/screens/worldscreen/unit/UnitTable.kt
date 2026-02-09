@@ -146,7 +146,7 @@ class UnitTable(val worldScreen: WorldScreen) : Table() {
     }
 
     fun selectSpy(spy: Spy?) {
-        presenter = spyPresenter
+        presenter = selectPresenterForSpy(spy, spyPresenter, summaryPresenter)
         spyPresenter.selectSpy(spy)
         resetUnitTable()
     }
@@ -163,7 +163,7 @@ class UnitTable(val worldScreen: WorldScreen) : Table() {
     fun update() {
         closeButton.isVisible = true
         
-        if (!presenter.shouldBeShown()) summaryPresenter
+        presenter = normalizePresenter(presenter, summaryPresenter)
         presenter.update()
 
         // more efficient to do this check once for both
@@ -275,4 +275,19 @@ class UnitTable(val worldScreen: WorldScreen) : Table() {
         fun updateWhenNeeded() {}
         fun shouldBeShown(): Boolean { return true}
     }
+}
+
+fun normalizePresenter(
+    presenter: UnitTable.Presenter,
+    summaryPresenter: UnitTable.Presenter
+): UnitTable.Presenter {
+    return if (presenter.shouldBeShown()) presenter else summaryPresenter
+}
+
+fun selectPresenterForSpy(
+    spy: Spy?,
+    spyPresenter: UnitTable.Presenter,
+    summaryPresenter: UnitTable.Presenter
+): UnitTable.Presenter {
+    return if (spy == null) summaryPresenter else spyPresenter
 }
