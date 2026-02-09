@@ -17,6 +17,7 @@ import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.utils.Disposable
 import com.unciv.UncivGame
+import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.NeighborDirection
@@ -38,6 +39,7 @@ class IcosaGlobeActor(
     private val visibilityContextProvider: () -> GlobeVisibilityPolicy.Context = { GlobeVisibilityPolicy.Context() },
     private val selectedUnitProvider: () -> MapUnit? = { null },
     private val selectedCityProvider: () -> City? = { null },
+    private val selectedCivProvider: () -> Civilization? = { null },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
     private data class UnitVisual(
@@ -701,30 +703,97 @@ class IcosaGlobeActor(
                 alpha = markerAlpha,
                 selected = selectedUnit != null && unit == selectedUnit
             )
-            if (spriteDrawn) continue
-            val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
-                unitName = unit.name,
-                baseUnitName = unit.baseUnit.name,
-                unitTypeName = unit.type.name,
-                imageExists = { ImageGetter.imageExists(it) }
-            )
-            val iconRegion = getRegion(unitLocation) ?: continue
-            if (selectedUnit != null && unit == selectedUnit) {
-                drawCenteredRegion(
-                    batch = batch,
-                    region = circleRegion,
-                    centerX = markerX,
-                    centerY = markerY,
-                    width = detailSize * 0.48f,
-                    height = detailSize * 0.48f,
-                    color = Color(1f, 0.97f, 0.82f, 1f),
-                    alpha = markerAlpha
+            if (!spriteDrawn) {
+                val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
+                    unitName = unit.name,
+                    baseUnitName = unit.baseUnit.name,
+                    unitTypeName = unit.type.name,
+                    imageExists = { ImageGetter.imageExists(it) }
                 )
+                val iconRegion = getRegion(unitLocation)
+                if (iconRegion != null) {
+                    if (selectedUnit != null && unit == selectedUnit) {
+                        drawCenteredRegion(
+                            batch = batch,
+                            region = circleRegion,
+                            centerX = markerX,
+                            centerY = markerY,
+                            width = detailSize * 0.48f,
+                            height = detailSize * 0.48f,
+                            color = Color(1f, 0.97f, 0.82f, 1f),
+                            alpha = markerAlpha
+                        )
+                    }
+                    drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.36f, detailSize * 0.36f, outer, markerAlpha)
+                    drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.26f, detailSize * 0.26f, inner, markerAlpha)
+                    drawCenteredRegion(batch, iconRegion, markerX, markerY, detailSize * 0.17f, detailSize * 0.17f, ImageGetter.CHARCOAL, markerAlpha)
+                }
             }
-            drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.36f, detailSize * 0.36f, outer, markerAlpha)
-            drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.26f, detailSize * 0.26f, inner, markerAlpha)
-            drawCenteredRegion(batch, iconRegion, markerX, markerY, detailSize * 0.17f, detailSize * 0.17f, ImageGetter.CHARCOAL, markerAlpha)
+            drawUnitStatusOverlays(
+                batch = batch,
+                unit = unit,
+                centerX = markerX,
+                centerY = markerY,
+                detailSize = detailSize,
+                alpha = markerAlpha
+            )
         }
+    }
+
+    private fun drawUnitStatusOverlays(
+        batch: Batch,
+        unit: MapUnit,
+        centerX: Float,
+        centerY: Float,
+        detailSize: Float,
+        alpha: Float
+    ) {
+        if (detailSize < 16f) return
+
+        val actionLocation = GlobeUnitStatusOverlayPolicy.actionIconLocation(unit)
+        val actionRegion = getRegion(actionLocation)
+        val circleRegion = getRegion(ImageGetter.circleLocation)
+        if (actionRegion != null && circleRegion != null) {
+            val actionSize = detailSize * 0.15f
+            val actionCircleSize = detailSize * 0.23f
+            drawCenteredRegion(
+                batch = batch,
+                region = circleRegion,
+                centerX = centerX + detailSize * 0.19f,
+                centerY = centerY - detailSize * 0.18f,
+                width = actionCircleSize,
+                height = actionCircleSize,
+                color = Color(0.18f, 0.2f, 0.22f, 1f),
+                alpha = alpha
+            )
+            drawCenteredRegion(
+                batch = batch,
+                region = actionRegion,
+                centerX = centerX + detailSize * 0.19f,
+                centerY = centerY - detailSize * 0.18f,
+                width = actionSize,
+                height = actionSize,
+                color = ImageGetter.CHARCOAL,
+                alpha = alpha
+            )
+        }
+
+        if (unit.health >= 100) return
+        val whiteDot = getRegion(ImageGetter.whiteDotLocation) ?: return
+        val barWidth = detailSize * 0.45f
+        val barHeight = max(2.2f, detailSize * 0.06f)
+        val barX = centerX - barWidth / 2f
+        val barY = centerY - detailSize * 0.36f
+        val healthPercent = (unit.health / 100f).coerceIn(0f, 1f)
+
+        batch.color.set(0f, 0f, 0f, alpha * 0.82f)
+        batch.draw(whiteDot, barX - 0.8f, barY - 0.8f, barWidth + 1.6f, barHeight + 1.6f)
+
+        batch.color.set(0.72f, 0.1f, 0.1f, alpha * 0.95f)
+        batch.draw(whiteDot, barX, barY, barWidth, barHeight)
+
+        batch.color.set(0.2f, 0.84f, 0.24f, alpha * 0.95f)
+        batch.draw(whiteDot, barX, barY, barWidth * healthPercent, barHeight)
     }
 
     private fun drawUnitSprite(
@@ -736,7 +805,6 @@ class IcosaGlobeActor(
         alpha: Float,
         selected: Boolean
     ): Boolean {
-        if (!UncivGame.Current.settings.showPixelUnits) return false
         val baseLocation = tileSetStrings.getUnitImageLocation(unit)
         val layerLocations = GlobeUnitSpriteLayerPolicy.resolveLayerLocations(baseLocation) { ImageGetter.imageExists(it) }
         if (layerLocations.isEmpty()) return false
@@ -787,6 +855,7 @@ class IcosaGlobeActor(
         val originalScaleX = font.data.scaleX
         val originalScaleY = font.data.scaleY
         val originalColor = Color(font.color)
+        val selectedCiv = selectedCivProvider()
 
         try {
             for (index in drawOrder) {
@@ -810,6 +879,7 @@ class IcosaGlobeActor(
 
                 val fontSize = (detailSize * 0.23f).coerceIn(9f, 18f)
                 font.data.setScale(fontSize / Fonts.ORIGINAL_FONT_SIZE)
+                val centerX = center.x
 
                 val populationText = city.population.population.tr()
                 val cityName = city.name
@@ -823,7 +893,7 @@ class IcosaGlobeActor(
                 val gap = fontSize * 0.34f
                 val bannerHeight = (fontSize * 1.55f).coerceIn(14f, 36f)
                 val bannerWidth = paddingX * 2f + popWidth + nameWidth + gap * 2f + if (capitalSize > 0f) capitalSize + gap else 0f
-                val bannerX = center.x - bannerWidth / 2f
+                val bannerX = centerX - bannerWidth / 2f
                 val bannerY = center.y + detailSize * 0.25f
 
                 val borderColor = if (selectedCity != null && selectedCity.getCenterTile() == tile) {
@@ -857,12 +927,134 @@ class IcosaGlobeActor(
                     cursorX += capitalSize + gap
                 }
                 font.draw(batch, cityName, cursorX, baselineY)
+
+                drawCityDefenceBadge(
+                    batch = batch,
+                    city = city,
+                    owner = owner,
+                    selectedCiv = selectedCiv,
+                    centerX = centerX,
+                    topY = bannerY + bannerHeight + fontSize * 0.08f,
+                    font = font,
+                    alpha = alpha
+                )
+                drawCityStatusIcons(
+                    batch = batch,
+                    city = city,
+                    selectedCiv = selectedCiv,
+                    centerX = centerX,
+                    y = bannerY - fontSize * 0.42f,
+                    iconSize = (fontSize * 0.95f).coerceIn(8f, 18f),
+                    alpha = alpha
+                )
+                drawCityHealthBar(
+                    batch = batch,
+                    city = city,
+                    centerX = centerX,
+                    y = bannerY + bannerHeight - 2.8f,
+                    width = bannerWidth * 0.74f,
+                    alpha = alpha
+                )
             }
         } finally {
             font.data.setScale(originalScaleX, originalScaleY)
             font.color.set(originalColor)
             batch.color = previousColor
         }
+    }
+
+    private fun drawCityDefenceBadge(
+        batch: Batch,
+        city: City,
+        owner: Civilization,
+        selectedCiv: Civilization?,
+        centerX: Float,
+        topY: Float,
+        font: com.badlogic.gdx.graphics.g2d.BitmapFont,
+        alpha: Float
+    ) {
+        val background = getRegion(ImageGetter.whiteDotLocation) ?: return
+        val strength = CityCombatant(city).getDefendingStrength()
+        val text = "${Fonts.strength}$strength"
+        bannerTextLayout.setText(font, text)
+        val paddingX = 5.2f
+        val width = max(26f, bannerTextLayout.width + paddingX * 2f)
+        val height = max(12f, font.capHeight + 4.5f)
+        val x = centerX - width / 2f
+        val y = topY
+
+        val borderColor = when {
+            selectedCiv == null -> Color(0.12f, 0.12f, 0.14f, 1f)
+            owner == selectedCiv -> Color(1f, 0.93f, 0.78f, 1f)
+            owner.isAtWarWith(selectedCiv) -> Color(0.88f, 0.16f, 0.16f, 1f)
+            else -> Color(0.12f, 0.12f, 0.14f, 1f)
+        }
+
+        batch.color.set(borderColor.r, borderColor.g, borderColor.b, alpha * 0.95f)
+        batch.draw(background, x - 1.4f, y - 1.4f, width + 2.8f, height + 2.8f)
+        batch.color.set(0.08f, 0.08f, 0.1f, alpha * 0.95f)
+        batch.draw(background, x, y, width, height)
+
+        font.color.set(1f, 1f, 1f, alpha)
+        font.draw(
+            batch,
+            text,
+            centerX - bannerTextLayout.width / 2f,
+            y + height / 2f + font.capHeight / 2.3f
+        )
+    }
+
+    private fun drawCityStatusIcons(
+        batch: Batch,
+        city: City,
+        selectedCiv: Civilization?,
+        centerX: Float,
+        y: Float,
+        iconSize: Float,
+        alpha: Float
+    ) {
+        if (selectedCiv == null) return
+        val iconLocations = GlobeCityStatusOverlayPolicy.resolveStatusIcons(city, selectedCiv)
+        if (iconLocations.isEmpty()) return
+
+        val spacing = iconSize * 1.08f
+        val startX = centerX - spacing * (iconLocations.size - 1) / 2f
+        for ((index, location) in iconLocations.withIndex()) {
+            val region = getRegion(location) ?: continue
+            drawCenteredRegion(
+                batch = batch,
+                region = region,
+                centerX = startX + index * spacing,
+                centerY = y,
+                width = iconSize,
+                height = iconSize,
+                color = Color.WHITE,
+                alpha = alpha
+            )
+        }
+    }
+
+    private fun drawCityHealthBar(
+        batch: Batch,
+        city: City,
+        centerX: Float,
+        y: Float,
+        width: Float,
+        alpha: Float
+    ) {
+        val maxHealth = city.getMaxHealth().toFloat()
+        if (maxHealth <= 0f || city.health >= maxHealth) return
+        val healthPercent = (city.health / maxHealth).coerceIn(0f, 1f)
+        val height = 3.2f
+        val x = centerX - width / 2f
+        val bg = getRegion(ImageGetter.whiteDotLocation) ?: return
+
+        batch.color.set(0f, 0f, 0f, alpha * 0.78f)
+        batch.draw(bg, x - 0.6f, y - 0.6f, width + 1.2f, height + 1.2f)
+        batch.color.set(0.74f, 0.13f, 0.13f, alpha * 0.95f)
+        batch.draw(bg, x, y, width, height)
+        batch.color.set(0.22f, 0.84f, 0.22f, alpha * 0.95f)
+        batch.draw(bg, x, y, width * healthPercent, height)
     }
 
     private fun drawCenteredRegion(
