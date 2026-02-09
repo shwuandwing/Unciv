@@ -54,7 +54,7 @@ Each frame:
 1. Project visible icosa tiles and their polygon corners to stage space.
 2. Draw base tile fill and ownership/grid borders via `ShapeRenderer`.
 3. Draw terrain/improvement/resource overlays as polygon-textured hexes via `PolygonSpriteBatch`.
-4. Draw roads and markers.
+4. Draw road strips, ownership border strips, and sprite markers (resource/improvement/city/unit) via `Batch`.
 
 Overlays are mapped per projected polygon vertex, not stamped as rectangles. This avoids most limb distortion artifacts and keeps texture clipping inside each hex.
 
@@ -86,6 +86,16 @@ Important details for parity with 2D:
 - Directional overlays (river strips and edge-transition strips) must use directional orientation **and** directional frame basis.
 - Directional overlays use `0` texel UV inset to avoid trimming border pixels needed for coast/river contact.
 - UV V-axis mapping for unflipped atlas regions is inverted for Y-up polygon mapping, otherwise bottom river textures appear on opposite edges.
+
+### Sprite marker overlays
+
+The 3D path now renders additional screen-facing sprite overlays for world/map parity:
+- resource icons (`ResourceIcons/*`) with resource-type circle backing
+- improvement icons (`ImprovementIcons/*`) with neutral/pillaged backing
+- city icons (`NationIcons/*` fallback)
+- unit icons (`UnitIcons/*` then `UnitTypeIcons/*` fallback) with civ-colored rings
+
+These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
 
 ### Test coverage
 

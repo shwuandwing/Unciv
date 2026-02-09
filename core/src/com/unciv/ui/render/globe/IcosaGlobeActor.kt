@@ -16,7 +16,9 @@ import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.utils.Disposable
 import com.unciv.UncivGame
+import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.NeighborDirection
+import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.ui.components.tilegroups.TileSetStrings
 import com.unciv.ui.images.ImageGetter
@@ -32,6 +34,11 @@ class IcosaGlobeActor(
     private val visibilityContextProvider: () -> GlobeVisibilityPolicy.Context = { GlobeVisibilityPolicy.Context() },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
+    private data class UnitVisual(
+        val unit: MapUnit,
+        val yOffsetFactor: Float
+    )
+
     private val shapeRenderer = ShapeRenderer()
     private val polygonBatch = PolygonSpriteBatch()
     private var tileMap = tileMapProvider()
@@ -67,6 +74,7 @@ class IcosaGlobeActor(
     private val cameraDirectionFromOrigin = Vector3()
     private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
+    private val overlayRegionCache = HashMap<String, TextureRegion?>()
 
     init {
         touchable = Touchable.enabled
@@ -118,6 +126,7 @@ class IcosaGlobeActor(
             requireNotNull(tileMap.ruleset) { "3D globe renderer requires tileMap.ruleset transients" },
             com.unciv.UncivGame.Current.settings
         )
+        overlayRegionCache.clear()
         selectedTileIndex = -1
 
         projectedCenters = Array(tileMap.tileList.size) { Vector2() }
@@ -153,9 +162,10 @@ class IcosaGlobeActor(
 
         batch.begin()
         drawRoadOverlaySprites(batch, parentAlpha)
+        drawOwnershipBorderSprites(batch, parentAlpha)
+        drawSpriteMarkers(batch, parentAlpha)
         batch.end()
 
-        drawMarkers()
         batch.begin()
     }
 
@@ -283,70 +293,222 @@ class IcosaGlobeActor(
                     polygon[next * 2 + 1]
                 )
             }
-
-            val tile = tileMap.tileList[index]
-            val owner = tile.getOwner() ?: continue
-            val ownerColor = GlobeRenderStateAdapter.borderColor(tile) ?: owner.nation.getInnerColor()
-            val ring = cache.neighborRings[index]
-
-            for (neighborRingIndex in ring.indices) {
-                val neighborIndex = ring[neighborRingIndex]
-                if (!projectedVisible[neighborIndex]) continue
-
-                val neighborOwner = tileMap.tileList[neighborIndex].getOwner()
-                if (neighborOwner == owner) continue
-
-                val startCorner = (neighborRingIndex - 1 + vertexCount) % vertexCount
-                val endCorner = neighborRingIndex
-
-                shapeRenderer.color.set(
-                    ownerColor.r,
-                    ownerColor.g,
-                    ownerColor.b,
-                    ownerColor.a * alphaScale
-                )
-                shapeRenderer.line(
-                    polygon[startCorner * 2],
-                    polygon[startCorner * 2 + 1],
-                    polygon[endCorner * 2],
-                    polygon[endCorner * 2 + 1]
-                )
-            }
         }
 
         shapeRenderer.end()
     }
 
-    private fun drawMarkers() {
-        val markerRadius = max(stage.viewport.worldHeight / 260f, 2.8f)
+    private fun drawOwnershipBorderSprites(batch: Batch, parentAlpha: Float) {
+        val whiteDot = getRegion(ImageGetter.whiteDotLocation) ?: return
+        val previousColor = Color(batch.color)
 
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        for (index in drawOrder) {
+            if (!projectedTileExplored[index]) continue
+            val tile = tileMap.tileList[index]
+            val owner = tile.getOwner() ?: continue
+            val ownerColor = GlobeRenderStateAdapter.borderColor(tile) ?: owner.nation.getInnerColor()
+            val polygon = projectedPolygons[index] ?: continue
+            val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
+            if (alphaScale <= 0.01f) continue
+            val vertexCount = polygon.size / 2
+            val ring = cache.neighborRings[index]
+
+            for (neighborRingIndex in ring.indices) {
+                val neighborIndex = ring[neighborRingIndex]
+                if (!projectedVisible[neighborIndex]) continue
+                val neighborOwner = tileMap.tileList[neighborIndex].getOwner()
+                if (neighborOwner == owner) continue
+
+                val startCorner = (neighborRingIndex - 1 + vertexCount) % vertexCount
+                val endCorner = neighborRingIndex
+                val startX = polygon[startCorner * 2]
+                val startY = polygon[startCorner * 2 + 1]
+                val endX = polygon[endCorner * 2]
+                val endY = polygon[endCorner * 2 + 1]
+                val dx = endX - startX
+                val dy = endY - startY
+                val length = hypot(dx, dy)
+                if (length <= 0.001f) continue
+                val thickness = max(0.95f, min(2.8f, length * 0.11f))
+                val angle = (atan2(dy, dx) * 180f / Math.PI).toFloat()
+                batch.color.set(
+                    ownerColor.r,
+                    ownerColor.g,
+                    ownerColor.b,
+                    parentAlpha * alphaScale * 0.92f
+                )
+                drawRotatedRegion(
+                    batch = batch,
+                    region = whiteDot,
+                    x = startX,
+                    y = startY - thickness / 2f,
+                    width = length,
+                    height = thickness,
+                    rotation = angle
+                )
+            }
+        }
+
+        batch.color = previousColor
+    }
+
+    private fun drawSpriteMarkers(batch: Batch, parentAlpha: Float) {
+        val previousColor = Color(batch.color)
+        val viewingCiv = visibilityContextProvider().viewingCiv
+        val showResourceAndImprovementIcons = viewingCiv == null || UncivGame.Current.settings.showResourcesAndImprovements
+
         for (index in drawOrder) {
             if (!projectedTileVisible[index]) continue
             val tile = tileMap.tileList[index]
+            val polygon = projectedPolygons[index] ?: continue
             val center = projectedCenters[index]
+            val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
+            val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+            val detailSize = min(frame.width, frame.height)
+            val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = frame.width,
+                frameHeight = frame.height,
+                facingDotCamera = projectedFacing[index]
+            )
+            if (lodAlpha <= 0.01f) continue
 
-            if (GlobeRenderStateAdapter.hasResourceMarker(tile)) {
-                shapeRenderer.color = Color(0.98f, 0.88f, 0.24f, 0.9f)
-                shapeRenderer.circle(center.x, center.y, markerRadius * 0.48f, 10)
+            val markerAlpha = parentAlpha * lodAlpha
+            if (showResourceAndImprovementIcons) {
+                drawResourceMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
+                drawImprovementMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
             }
-
-            if (GlobeRenderStateAdapter.hasCityMarker(tile)) {
-                val owner = tile.getOwner()
-                val outer = owner?.nation?.getOuterColor() ?: Color.BLACK
-                val inner = owner?.nation?.getInnerColor() ?: Color.WHITE
-                shapeRenderer.color = outer
-                shapeRenderer.circle(center.x, center.y, markerRadius * 0.95f, 14)
-                shapeRenderer.color = inner
-                shapeRenderer.circle(center.x, center.y, markerRadius * 0.56f, 14)
-            }
-
-            if (GlobeRenderStateAdapter.hasUnitMarker(tile)) {
-                shapeRenderer.color = Color.BLACK
-                shapeRenderer.circle(center.x + markerRadius * 0.85f, center.y - markerRadius * 0.65f, markerRadius * 0.35f, 8)
-            }
+            drawCityMarker(batch, tile, center, detailSize, markerAlpha)
+            drawUnitMarkers(batch, tile, center, detailSize, markerAlpha, viewingCiv)
         }
-        shapeRenderer.end()
+
+        batch.color = previousColor
+    }
+
+    private fun drawResourceMarker(
+        batch: Batch,
+        tile: Tile,
+        center: Vector2,
+        detailSize: Float,
+        alpha: Float,
+        viewingCiv: Civilization?
+    ) {
+        val resourceName = tile.resource ?: return
+        if (viewingCiv != null && !viewingCiv.canSeeResource(tile.tileResource)) return
+        val iconLocation = GlobeSpriteOverlayResolver.resourceIconLocation(resourceName) ?: return
+        val iconRegion = getRegion(iconLocation) ?: return
+        val circleRegion = getRegion("ResourceIcons/Circle") ?: getRegion(ImageGetter.circleLocation)
+        val bgSize = detailSize * 0.36f
+        val iconSize = detailSize * 0.22f
+        val x = center.x - detailSize * 0.25f
+        val y = center.y + detailSize * 0.20f
+        val bgColor = tile.tileResource?.resourceType?.getColor() ?: Color(0.14f, 0.14f, 0.14f, 1f)
+
+        if (circleRegion != null) {
+            drawCenteredRegion(batch, circleRegion, x, y, bgSize, bgSize, bgColor, alpha)
+        }
+        drawCenteredRegion(batch, iconRegion, x, y, iconSize, iconSize, ImageGetter.CHARCOAL, alpha)
+    }
+
+    private fun drawImprovementMarker(
+        batch: Batch,
+        tile: Tile,
+        center: Vector2,
+        detailSize: Float,
+        alpha: Float,
+        viewingCiv: Civilization?
+    ) {
+        val shownImprovement = tile.getShownImprovement(viewingCiv) ?: return
+        val iconLocation = GlobeSpriteOverlayResolver.improvementIconLocation(shownImprovement) ?: return
+        val iconRegion = getRegion(iconLocation) ?: return
+        val circleRegion = getRegion("ImprovementIcons/Circle") ?: getRegion(ImageGetter.circleLocation) ?: return
+        val bgSize = detailSize * 0.36f
+        val iconSize = detailSize * 0.22f
+        val x = center.x + detailSize * 0.25f
+        val y = center.y + detailSize * 0.20f
+        val bgColor = if (tile.improvementIsPillaged) Color(0.55f, 0.18f, 0.14f, 1f)
+        else Color(0.20f, 0.22f, 0.24f, 1f)
+
+        drawCenteredRegion(batch, circleRegion, x, y, bgSize, bgSize, bgColor, alpha)
+        drawCenteredRegion(batch, iconRegion, x, y, iconSize, iconSize, ImageGetter.CHARCOAL, alpha)
+    }
+
+    private fun drawCityMarker(batch: Batch, tile: Tile, center: Vector2, detailSize: Float, alpha: Float) {
+        if (!tile.isCityCenter()) return
+        val owner = tile.getOwner()
+        val outer = owner?.nation?.getOuterColor() ?: Color.BLACK
+        val inner = owner?.nation?.getInnerColor() ?: Color.WHITE
+        val circleRegion = getRegion(ImageGetter.circleLocation) ?: return
+        val cityIconLocation = GlobeSpriteOverlayResolver.cityIconLocation(owner?.civName)
+        val cityIcon = getRegion(cityIconLocation) ?: getRegion("OtherIcons/Star")
+
+        drawCenteredRegion(batch, circleRegion, center.x, center.y, detailSize * 0.44f, detailSize * 0.44f, outer, alpha)
+        drawCenteredRegion(batch, circleRegion, center.x, center.y, detailSize * 0.30f, detailSize * 0.30f, inner, alpha)
+        if (cityIcon != null) {
+            drawCenteredRegion(batch, cityIcon, center.x, center.y, detailSize * 0.18f, detailSize * 0.18f, ImageGetter.CHARCOAL, alpha)
+        }
+    }
+
+    private fun drawUnitMarkers(
+        batch: Batch,
+        tile: Tile,
+        center: Vector2,
+        detailSize: Float,
+        alpha: Float,
+        viewingCiv: Civilization?
+    ) {
+        val visuals = mutableListOf<UnitVisual>()
+        tile.militaryUnit?.let {
+            if (viewingCiv == null || viewingCiv.viewableInvisibleUnitsTiles.contains(tile) || !tile.hasEnemyInvisibleUnit(viewingCiv))
+                visuals += UnitVisual(it, 0.18f)
+        }
+        tile.civilianUnit?.let { visuals += UnitVisual(it, -0.18f) }
+        if (visuals.isEmpty()) return
+
+        val circleRegion = getRegion(ImageGetter.circleLocation) ?: return
+        for (visual in visuals) {
+            val unit = visual.unit
+            val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
+                unitName = unit.name,
+                baseUnitName = unit.baseUnit.name,
+                unitTypeName = unit.type.name,
+                imageExists = { ImageGetter.imageExists(it) }
+            )
+            val iconRegion = getRegion(unitLocation) ?: continue
+
+            val markerAlpha = if (viewingCiv != null && unit.civ == viewingCiv && !unit.hasMovement()) alpha * 0.65f else alpha
+            val outer = unit.civ.nation.getOuterColor()
+            val inner = unit.civ.nation.getInnerColor()
+            val markerX = center.x
+            val markerY = center.y + detailSize * visual.yOffsetFactor
+            drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.36f, detailSize * 0.36f, outer, markerAlpha)
+            drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.26f, detailSize * 0.26f, inner, markerAlpha)
+            drawCenteredRegion(batch, iconRegion, markerX, markerY, detailSize * 0.17f, detailSize * 0.17f, ImageGetter.CHARCOAL, markerAlpha)
+        }
+    }
+
+    private fun drawCenteredRegion(
+        batch: Batch,
+        region: TextureRegion,
+        centerX: Float,
+        centerY: Float,
+        width: Float,
+        height: Float,
+        color: Color,
+        alpha: Float
+    ) {
+        batch.color.set(color.r, color.g, color.b, color.a * alpha)
+        batch.draw(
+            region,
+            centerX - width / 2f,
+            centerY - height / 2f,
+            width,
+            height
+        )
+    }
+
+    private fun getRegion(location: String?): TextureRegion? {
+        if (location == null) return null
+        return overlayRegionCache.getOrPut(location) { ImageGetter.getDrawableOrNull(location)?.region }
     }
 
     private fun drawPolygonTileOverlays(parentAlpha: Float) {
