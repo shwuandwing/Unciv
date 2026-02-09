@@ -41,6 +41,7 @@ import com.unciv.ui.popups.hasOpenPopups
 import com.unciv.ui.render.globe.IcosaGlobeActor
 import com.unciv.ui.render.globe.IcosaRenderMode
 import com.unciv.ui.render.globe.IcosaRenderModePolicy
+import com.unciv.ui.render.globe.GlobeVisibilityPolicy
 import com.unciv.ui.screens.basescreen.BaseScreen
 import com.unciv.ui.screens.cityscreen.CityScreen
 import com.unciv.ui.screens.devconsole.DevConsolePopup
@@ -366,9 +367,15 @@ class WorldScreen(
         globeActor = null
         if (gameInfo.tileMap.mapParameters.shape != com.unciv.logic.map.MapShape.icosahedron) return
 
-        val actor = IcosaGlobeActor(tileMapProvider = { gameInfo.tileMap }) { tile ->
-            inspectTileInReadOnlyMode(tile)
-        }
+        val actor = IcosaGlobeActor(
+            tileMapProvider = { gameInfo.tileMap },
+            visibilityContextProvider = {
+                GlobeVisibilityPolicy.Context(
+                    fogOfWarEnabled = fogOfWar,
+                    viewingCiv = if (fogOfWar) selectedCiv else viewingCiv
+                )
+            }
+        ) { tile -> inspectTileInReadOnlyMode(tile) }
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)
         globeActor = actor
