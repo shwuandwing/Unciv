@@ -86,6 +86,7 @@ Important details for parity with 2D:
 - Directional overlays (river strips and edge-transition strips) must use directional orientation **and** directional frame basis.
 - Directional overlays use `0` texel UV inset to avoid trimming border pixels needed for coast/river contact.
 - UV V-axis mapping for unflipped atlas regions is inverted for Y-up polygon mapping, otherwise bottom river textures appear on opposite edges.
+- Ownership border strips are rendered in two passes (nation outer color + nation inner color) to mirror 2D civ border semantics.
 
 ### Sprite marker overlays
 
@@ -93,8 +94,10 @@ The 3D path now renders additional screen-facing sprite overlays for world/map p
 - resource icons (`ResourceIcons/*`) with resource-type circle backing
 - improvement icons (`ImprovementIcons/*`) with neutral/pillaged backing
 - city icons (`NationIcons/*` fallback)
-- unit icons (`UnitIcons/*` then `UnitTypeIcons/*` fallback) with civ-colored rings
+- pixel unit sprites from the active tileset (`TileSets/*/Units/*`) when `showPixelUnits` is enabled
+- fallback unit icons (`UnitIcons/*` then `UnitTypeIcons/*`) with civ-colored rings when pixel sprites are unavailable
 - tile yield icons (`StatIcons/*`) in world 3D mode when `showTileYields` is enabled
+- simplified city banners in world 3D mode (population, capital indicator, city name)
 
 These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
 
@@ -104,6 +107,8 @@ World-screen 3D mode now includes selected-unit navigation affordances:
 - reachable-tile highlight fill using current unit movement scope
 - hover path preview polyline from selected unit to hovered reachable tile
 - selected-city bombard range highlight and direct-click bombard execution on valid enemy targets
+- repeated-click stack cycling on city/air-stack tiles so unit selection does not depend on hidden 2D overlay buttons in 3D mode
+- explicit selected city/unit marker emphasis in globe marker rendering
 
 These are driven from the same `UnitMovement.getDistanceToTiles()` data used by 2D logic, so interaction reachability stays consistent between render modes.
 
