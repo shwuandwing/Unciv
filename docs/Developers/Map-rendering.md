@@ -31,15 +31,21 @@ Select the "GL Thread" from the list of threads, and change visualization to a f
 
 You can find various games to test on [here](https://github.com/yairm210/Unciv/issues?q=label%3A%22Contains+Saved+Game%22) - [This](https://github.com/yairm210/Unciv/issues/4840) for example is a crowded one.
 
-## Icosahedron 3D view (Map Editor)
+## Icosahedron 3D view (Map Editor and World Screen)
 
-The icosahedron map editor has a dedicated 3D renderer which is separate from the classic `TileGroup` 2D path.
+The icosahedron map editor and world screen share a dedicated 3D globe renderer path, separate from classic `TileGroup` 2D rendering.
 
 Primary files:
 - `core/src/com/unciv/ui/render/globe/IcosaGlobeActor.kt`
 - `core/src/com/unciv/ui/render/globe/IcosaMeshRuntimeCache.kt`
 - `core/src/com/unciv/ui/render/globe/GlobeTileOverlayResolver.kt`
 - `core/src/com/unciv/ui/render/globe/GlobeOverlay*` policy/helper files
+- `core/src/com/unciv/ui/screens/mapeditorscreen/MapEditorScreen.kt`
+- `core/src/com/unciv/ui/screens/worldscreen/WorldScreen.kt`
+
+Current mode behavior:
+- Map Editor 3D mode is read-only by product decision.
+- World Screen phase-3 3D mode is also view-only/read-only (navigation + inspection, no gameplay actions).
 
 ### Render pipeline
 
