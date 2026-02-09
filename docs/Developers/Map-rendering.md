@@ -30,3 +30,66 @@ Boot up the game on your Android device, open a game, start recording CPU, move 
 Select the "GL Thread" from the list of threads, and change visualization to a flame graph. You'll then see what's actually taking rendering time.
 
 You can find various games to test on [here](https://github.com/yairm210/Unciv/issues?q=label%3A%22Contains+Saved+Game%22) - [This](https://github.com/yairm210/Unciv/issues/4840) for example is a crowded one.
+
+## Icosahedron 3D view (Map Editor)
+
+The icosahedron map editor has a dedicated 3D renderer which is separate from the classic `TileGroup` 2D path.
+
+Primary files:
+- `core/src/com/unciv/ui/render/globe/IcosaGlobeActor.kt`
+- `core/src/com/unciv/ui/render/globe/IcosaMeshRuntimeCache.kt`
+- `core/src/com/unciv/ui/render/globe/GlobeTileOverlayResolver.kt`
+- `core/src/com/unciv/ui/render/globe/GlobeOverlay*` policy/helper files
+
+### Render pipeline
+
+Each frame:
+1. Project visible icosa tiles and their polygon corners to stage space.
+2. Draw base tile fill and ownership/grid borders via `ShapeRenderer`.
+3. Draw terrain/improvement/resource overlays as polygon-textured hexes via `PolygonSpriteBatch`.
+4. Draw roads and markers.
+
+Overlays are mapped per projected polygon vertex, not stamped as rectangles. This avoids most limb distortion artifacts and keeps texture clipping inside each hex.
+
+### Orientation model
+
+For icosa tiles, overlay orientation uses a hybrid strategy:
+- Take a continuous local-north reference from sphere geometry.
+- Snap to the closest polygon-aligned candidate (hex vertex directions).
+
+This keeps edge alignment stable while avoiding abrupt flips.
+
+### LOD near the limb
+
+At grazing camera angles (the globe limb), tile textures are heavily minified and can alias.
+The renderer applies screen-space LOD policies:
+- Fade overlay detail by projected tile span and facing angle.
+- Fade base terrain earlier than high-value overlays.
+- Fade grid/border lines near the limb.
+
+These policies are in `GlobeOverlayLodPolicy`.
+
+### River/edge/border overlays
+
+2D rendering composes terrain, edge transitions, and rivers in `TileLayerTerrain`.
+The 3D path resolves equivalent texture layers through `GlobeTileOverlayResolver` and maps them onto projected tile polygons.
+
+Important details for parity with 2D:
+- River ownership is still tile-edge based (`hasBottomRightRiver` / `hasBottomRiver` / `hasBottomLeftRiver`).
+- Directional overlays (river strips and edge-transition strips) must use directional orientation **and** directional frame basis.
+- Directional overlays use `0` texel UV inset to avoid trimming border pixels needed for coast/river contact.
+- UV V-axis mapping for unflipped atlas regions is inverted for Y-up polygon mapping, otherwise bottom river textures appear on opposite edges.
+
+### Test coverage
+
+Globe renderer tests live under:
+- `tests/src/com/unciv/ui/render/globe/`
+
+Important categories:
+- Orientation and continuity policies.
+- Polygon UV mapping and triangulation.
+- Overlay LOD behavior.
+- Terrain/edge/river overlay resolution helpers.
+- Directional overlay frame-basis selection (`regular` vs `directional`).
+- Directional overlay UV inset and V-axis window orientation.
+- Saved-map regression coverage for river-edge selection (`android/assets/maps/Test`, tile `(105,46)`).

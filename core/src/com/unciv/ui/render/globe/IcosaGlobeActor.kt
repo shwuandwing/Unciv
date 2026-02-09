@@ -5,6 +5,8 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g2d.Batch
+import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch
+import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
@@ -13,19 +15,24 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.utils.Disposable
+import com.unciv.UncivGame
+import com.unciv.logic.map.NeighborDirection
+import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.ui.components.tilegroups.TileSetStrings
 import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
+import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.random.Random
 
 class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
-
     private val shapeRenderer = ShapeRenderer()
+    private val polygonBatch = PolygonSpriteBatch()
     private var tileMap = tileMapProvider()
     private var cache = IcosaMeshRuntimeCache.from(tileMap)
     private var tileSetStrings = TileSetStrings(
@@ -46,12 +53,16 @@ class IcosaGlobeActor(
     private var projectedPolygons = arrayOfNulls<FloatArray>(tileMap.tileList.size)
     private var projectedDistances = FloatArray(tileMap.tileList.size)
     private var projectedVisible = BooleanArray(tileMap.tileList.size)
+    private var projectedFacing = FloatArray(tileMap.tileList.size)
+    private var projectedOverlayRotations = FloatArray(tileMap.tileList.size)
+    private var projectedDirectionalOverlayRotations = FloatArray(tileMap.tileList.size)
     private val drawOrder = ArrayList<Int>(tileMap.tileList.size)
 
     private val tempWorld = Vector3()
     private val tempScreen = Vector3()
     private val tempStage = Vector2()
     private val cameraDirectionFromOrigin = Vector3()
+    private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
 
     init {
         touchable = Touchable.enabled
@@ -109,6 +120,9 @@ class IcosaGlobeActor(
         projectedPolygons = arrayOfNulls<FloatArray>(tileMap.tileList.size)
         projectedDistances = FloatArray(tileMap.tileList.size)
         projectedVisible = BooleanArray(tileMap.tileList.size)
+        projectedFacing = FloatArray(tileMap.tileList.size)
+        projectedOverlayRotations = FloatArray(tileMap.tileList.size)
+        projectedDirectionalOverlayRotations = FloatArray(tileMap.tileList.size)
         drawOrder.clear()
     }
 
@@ -128,10 +142,15 @@ class IcosaGlobeActor(
         shapeRenderer.projectionMatrix = stage.camera.combined
         drawTileSurface()
         drawBorders()
-        drawMarkers()
+
+        drawPolygonTileOverlays(parentAlpha)
 
         batch.begin()
-        drawTerrainDetails(batch, parentAlpha)
+        drawRoadOverlaySprites(batch, parentAlpha)
+        batch.end()
+
+        drawMarkers()
+        batch.begin()
     }
 
     private fun projectTiles() {
@@ -146,13 +165,24 @@ class IcosaGlobeActor(
             val index = tile.zeroBasedIndex
             projectedVisible[index] = false
             projectedPolygons[index] = null
+            projectedFacing[index] = 0f
+            projectedOverlayRotations[index] = 0f
+            projectedDirectionalOverlayRotations[index] = 0f
 
             val centerDirection = cache.centers[index]
-            if (centerDirection.dot(cameraDirectionFromOrigin) <= 0.05f) continue
+            val facing = centerDirection.dot(cameraDirectionFromOrigin)
+            if (facing <= 0.05f) continue
 
             val centerWorld = IcosaProjection.projectToSphere(centerDirection, 1f)
             projectToStage(centerWorld, projectedCenters[index])
             projectedDistances[index] = camera.position.dst2(centerWorld)
+            projectedFacing[index] = facing
+            val northDirection = GlobeOverlayOrientation.localNorthOffsetDirection(centerDirection)
+            val northWorld = IcosaProjection.projectToSphere(northDirection, 1f)
+            projectToStage(northWorld, tempStage)
+            val northDx = tempStage.x - projectedCenters[index].x
+            val northDy = tempStage.y - projectedCenters[index].y
+            val localNorthRotation = GlobeOverlayOrientation.screenRotationDegrees(projectedCenters[index], tempStage)
 
             val corners = cache.cornerRings[index]
             val polygon = FloatArray(corners.size * 2)
@@ -164,6 +194,17 @@ class IcosaGlobeActor(
             }
 
             projectedPolygons[index] = polygon
+            val regularBaseRotation = if (northDx * northDx + northDy * northDy > 1e-6f) {
+                GlobeOverlayOrientation.screenRotationFromPolygonNearestTo(
+                    center = projectedCenters[index],
+                    polygon = polygon,
+                    referenceRotationDegrees = localNorthRotation
+                )
+            } else {
+                GlobeOverlayOrientation.screenRotationFromPolygonTopVertex(projectedCenters[index], polygon)
+            }
+            projectedOverlayRotations[index] = regularBaseRotation
+            projectedDirectionalOverlayRotations[index] = resolveDirectionalBaseRotation(index, regularBaseRotation, polygon)
             projectedVisible[index] = true
             drawOrder.add(index)
         }
@@ -178,7 +219,7 @@ class IcosaGlobeActor(
             val polygon = projectedPolygons[index] ?: continue
             val tile = tileMap.tileList[index]
             val center = projectedCenters[index]
-            val color = GlobeRenderStateAdapter.tileFillColor(tile)
+            val color = GlobeRenderStateAdapter.tileFillColor(tile, tileSetStrings.tileSetConfig.useColorAsBaseTerrain)
             if (index == selectedTileIndex) {
                 color.lerp(Color.WHITE, 0.26f)
             }
@@ -201,13 +242,20 @@ class IcosaGlobeActor(
     private fun drawBorders() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
 
-        val gridColor = Color(0.07f, 0.09f, 0.12f, 0.33f)
+        val gridColor = Color(0.07f, 0.09f, 0.12f, 0.1f)
 
         for (index in drawOrder) {
             val polygon = projectedPolygons[index] ?: continue
             val vertexCount = polygon.size / 2
+            val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
+            if (alphaScale <= 0.01f) continue
 
-            shapeRenderer.color = gridColor
+            shapeRenderer.color.set(
+                gridColor.r,
+                gridColor.g,
+                gridColor.b,
+                gridColor.a * alphaScale
+            )
             for (i in 0 until vertexCount) {
                 val next = (i + 1) % vertexCount
                 shapeRenderer.line(
@@ -233,7 +281,12 @@ class IcosaGlobeActor(
                 val startCorner = (neighborRingIndex - 1 + vertexCount) % vertexCount
                 val endCorner = neighborRingIndex
 
-                shapeRenderer.color = ownerColor
+                shapeRenderer.color.set(
+                    ownerColor.r,
+                    ownerColor.g,
+                    ownerColor.b,
+                    ownerColor.a * alphaScale
+                )
                 shapeRenderer.line(
                     polygon[startCorner * 2],
                     polygon[startCorner * 2 + 1],
@@ -277,44 +330,328 @@ class IcosaGlobeActor(
         shapeRenderer.end()
     }
 
-    private fun drawTerrainDetails(batch: Batch, parentAlpha: Float) {
-        val previousColor = Color(batch.color)
-        batch.color = Color.WHITE.cpy().apply { a = parentAlpha }
-
+    private fun drawPolygonTileOverlays(parentAlpha: Float) {
+        polygonBatch.projectionMatrix = stage.camera.combined
+        polygonBatch.begin()
         for (index in drawOrder) {
             val polygon = projectedPolygons[index] ?: continue
             val tile = tileMap.tileList[index]
             val center = projectedCenters[index]
-
-            val locations = getTerrainDetailLocations(tile)
-            if (locations.isEmpty()) continue
-
-            val radius = min(
-                distanceToNearestCorner(center, polygon),
-                stage.viewport.worldHeight / 18f
+            val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
+            val directionalRotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedDirectionalOverlayRotations[index])
+            val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+            val detailWidth = frame.width
+            val detailHeight = frame.height
+            val detailLodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = detailWidth,
+                frameHeight = detailHeight,
+                facingDotCamera = projectedFacing[index]
             )
-            val detailSize = max(2f, radius * 1.95f)
-            val x = center.x - detailSize / 2f
-            val y = center.y - detailSize / 2f
+            val baseTerrainLodAlpha = GlobeOverlayLodPolicy.baseTerrainAlpha(
+                frameWidth = detailWidth,
+                frameHeight = detailHeight,
+                facingDotCamera = projectedFacing[index]
+            )
+            if (max(detailLodAlpha, baseTerrainLodAlpha) <= 0.01f) continue
 
-            for (location in locations) {
-                if (!ImageGetter.imageExists(location)) continue
-                ImageGetter.getDrawable(location).draw(batch, x, y, detailSize, detailSize)
+            val detailLayers = getTerrainDetailLocations(tile)
+            for (location in detailLayers) {
+                drawPolygonLocationIfExists(
+                    GlobeCenterOverlayPolicy.Overlay(location = location),
+                    polygon,
+                    frame.centerX,
+                    frame.centerY,
+                    detailWidth,
+                    detailHeight,
+                    tile,
+                    rotation,
+                    parentAlpha * detailLodAlpha
+                )
+            }
+
+            val centerOverlays = getCenterOverlayLocations(tile)
+            for (overlay in centerOverlays) {
+                val overlayLodAlpha = if (overlay.isBaseTerrain) baseTerrainLodAlpha else detailLodAlpha
+                val overlayRotation = if (overlay.isDirectional) directionalRotation else rotation
+                val overlayFrame = GlobeOverlayFramePolicy.frameForOverlay(
+                    center = center,
+                    polygon = polygon,
+                    regularRotationDegrees = rotation,
+                    directionalRotationDegrees = directionalRotation,
+                    overlay = overlay
+                )
+                val overlayWidth = overlayFrame.width * overlay.scale
+                val overlayHeight = overlayFrame.height * overlay.scale
+                drawPolygonLocationIfExists(
+                    overlay,
+                    polygon,
+                    overlayFrame.centerX,
+                    overlayFrame.centerY,
+                    overlayWidth,
+                    overlayHeight,
+                    tile,
+                    overlayRotation,
+                    parentAlpha * overlayLodAlpha
+                )
             }
         }
+        polygonBatch.end()
+    }
 
+    private fun drawRoadOverlaySprites(batch: Batch, parentAlpha: Float) {
+        val previousColor = Color(batch.color)
+        batch.color = Color.WHITE.cpy().apply { a = parentAlpha }
+        for (index in drawOrder) {
+            val polygon = projectedPolygons[index] ?: continue
+            val center = projectedCenters[index]
+            val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
+            val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
+            val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = frame.width,
+                frameHeight = frame.height,
+                facingDotCamera = projectedFacing[index]
+            )
+            if (lodAlpha <= 0.01f) continue
+            batch.color.a = parentAlpha * lodAlpha
+            drawRoadOverlays(batch, index, center, min(frame.width, frame.height))
+        }
         batch.color = previousColor
     }
 
-    private fun distanceToNearestCorner(center: Vector2, polygon: FloatArray): Float {
-        var minDistance = Float.MAX_VALUE
-        for (i in 0 until polygon.size / 2) {
-            val dx = polygon[i * 2] - center.x
-            val dy = polygon[i * 2 + 1] - center.y
-            val distance = hypot(dx, dy)
-            if (distance < minDistance) minDistance = distance
+    private fun drawRoadOverlays(batch: Batch, index: Int, center: Vector2, detailSize: Float) {
+        val tile = tileMap.tileList[index]
+        if (tile.roadStatus == RoadStatus.None) return
+        val ring = cache.neighborRings[index]
+        val roadThickness = max(1.6f, detailSize * 0.12f)
+
+        for (neighborIndex in ring) {
+            if (!projectedVisible[neighborIndex]) continue
+            val neighbor = tileMap.tileList[neighborIndex]
+            val roadStatus = GlobeTileOverlayResolver.resolveRoadStatus(tile.roadStatus, neighbor.roadStatus)
+            if (roadStatus == RoadStatus.None) continue
+
+            val location = tileSetStrings.orFallback { roadsMap[roadStatus]!! }
+            val drawable = ImageGetter.getDrawableOrNull(location) ?: continue
+            val neighborCenter = projectedCenters[neighborIndex]
+
+            val dx = neighborCenter.x - center.x
+            val dy = neighborCenter.y - center.y
+            val length = hypot(dx, dy)
+            if (length <= 0.001f) continue
+
+            val roadLength = min(detailSize * 0.58f, length * 0.52f)
+            val angle = (atan2(dy, dx) * 180f / Math.PI).toFloat()
+            drawRotatedRegion(
+                batch = batch,
+                region = drawable.region,
+                x = center.x,
+                y = center.y - roadThickness / 2f,
+                width = roadLength,
+                height = roadThickness,
+                rotation = angle
+            )
         }
-        return minDistance
+    }
+
+    private fun drawRotatedRegion(
+        batch: Batch,
+        region: TextureRegion,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        rotation: Float
+    ) {
+        batch.draw(
+            region,
+            x,
+            y,
+            0f,
+            height / 2f,
+            width,
+            height,
+            1f,
+            1f,
+            rotation
+        )
+    }
+
+    private fun drawPolygonLocationIfExists(
+        overlay: GlobeCenterOverlayPolicy.Overlay,
+        polygon: FloatArray,
+        frameCenterX: Float,
+        frameCenterY: Float,
+        frameWidth: Float,
+        frameHeight: Float,
+        tile: Tile,
+        rotation: Float,
+        parentAlpha: Float
+    ) {
+        val location = chooseVariant(overlay.location, tile) ?: return
+        val region = ImageGetter.getDrawable(location).region
+        val vertexCount = polygon.size / 2
+        val triangles = overlayTrianglesByVertexCount.getOrPut(vertexCount) {
+            GlobeOverlayPolygonMapping.triangleFan(vertexCount)
+        }
+        val packedColor = Color.toFloatBits(1f, 1f, 1f, parentAlpha * overlay.alpha)
+
+        val texture = region.texture
+        // Atlas tiles have anti-aliased transparent edges; inset only where needed.
+        // Directional overlays (rivers/edge strips) must keep border texels so they reach tile edges.
+        val insetTexels = GlobeOverlaySpritePolicy.textureInsetTexels(overlay)
+        val uInset = insetTexels / texture.width.toFloat()
+        val vInset = insetTexels / texture.height.toFloat()
+        val uWindow = GlobeOverlaySpritePolicy.horizontalUvWindow(region.u, region.u2, uInset)
+        val vWindow = GlobeOverlaySpritePolicy.verticalUvWindow(region.v, region.v2, vInset)
+        val uStart = uWindow.start
+        val uEnd = uWindow.end
+        val vStart = vWindow.start
+        val vEnd = vWindow.end
+
+        val mappedVertices = FloatArray(vertexCount * 5)
+        var out = 0
+        for (i in 0 until vertexCount) {
+            val x = polygon[i * 2]
+            val y = polygon[i * 2 + 1]
+            val uv = GlobeOverlayPolygonMapping.uvForPoint(
+                pointX = x,
+                pointY = y,
+                frameCenterX = frameCenterX,
+                frameCenterY = frameCenterY,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight,
+                rotationDegrees = rotation
+            )
+            mappedVertices[out++] = x
+            mappedVertices[out++] = y
+            mappedVertices[out++] = packedColor
+            mappedVertices[out++] = uStart + (uEnd - uStart) * uv.x
+            mappedVertices[out++] = vStart + (vEnd - vStart) * uv.y
+        }
+
+        polygonBatch.draw(
+            texture,
+            mappedVertices,
+            0,
+            mappedVertices.size,
+            triangles,
+            0,
+            triangles.size
+        )
+    }
+
+    private fun chooseVariant(baseLocation: String, tile: Tile): String? {
+        if (!ImageGetter.imageExists(baseLocation)) return null
+        val available = ArrayList<String>()
+        available += baseLocation
+        var i = 2
+        while (ImageGetter.imageExists("$baseLocation$i")) {
+            available += "$baseLocation$i"
+            i++
+        }
+        return available.random(Random(tile.position.hashCode() + baseLocation.hashCode()))
+    }
+
+    private fun getCenterOverlayLocations(tile: Tile): List<GlobeCenterOverlayPolicy.Overlay> {
+        val shownImprovement = tile.getShownImprovement(null)
+        val borderOverlays = getBorderOverlayLocations(tile)
+        val directionalOverlays = borderOverlays.toHashSet()
+        val fullLayers = GlobeTileOverlayResolver.resolveTerrainLayerLocations(
+            baseTerrain = tile.baseTerrain,
+            terrainFeatures = tile.terrainFeatures,
+            naturalWonder = tile.naturalWonder,
+            shownImprovement = shownImprovement,
+            improvementIsPillaged = tile.improvementIsPillaged,
+            resource = tile.resource,
+            showPixelImprovements = UncivGame.Current.settings.showPixelImprovements,
+            canSeeResource = true,
+            useColorAsBaseTerrain = tileSetStrings.tileSetConfig.useColorAsBaseTerrain,
+            useSummaryImages = tileSetStrings.tileSetConfig.useSummaryImages,
+            hexagonLocation = tileSetStrings.hexagon,
+            naturalWonderSummaryLocation = tileSetStrings.naturalWonder,
+            edgeLocations = borderOverlays.asSequence(),
+            getTile = { key -> tileSetStrings.getTile(key) },
+            orFallback = { key -> tileSetStrings.orFallback { getTile(key) } },
+            imageExists = { path -> ImageGetter.imageExists(path) },
+            ruleVariants = tileSetStrings.tileSetConfig.ruleVariants
+        )
+
+        val hexagon = tileSetStrings.hexagon
+        val baseTerrainTiles = setOf(
+            tileSetStrings.getTile(tile.baseTerrain),
+            tileSetStrings.orFallback { getTile(tile.baseTerrain) }
+        )
+
+        return GlobeCenterOverlayPolicy.classify(fullLayers, hexagon, baseTerrainTiles).map { overlay ->
+            if (overlay.location in directionalOverlays) overlay.copy(isDirectional = true)
+            else overlay
+        }
+    }
+
+    private fun getBorderOverlayLocations(tile: Tile): List<String> {
+        if (!tile.hasTileMap()) return emptyList()
+        val neighborContexts = tile.neighbors.asSequence().map { neighbor ->
+            val clockPosition = tile.tileMap.getNeighborTileClockPosition(tile, neighbor)
+            GlobeTileOverlayResolver.NeighborEdgeContext(
+                direction = NeighborDirection.byClockPosition[clockPosition],
+                terrainNames = neighbor.cachedTerrainData.terrainNameSet,
+                baseTerrainTypeName = neighbor.getBaseTerrain().type.name
+            )
+        }
+
+        return GlobeTileOverlayResolver.resolveBorderOverlayLocations(
+            originTerrainNames = tile.cachedTerrainData.terrainNameSet,
+            originBaseTerrainTypeName = tile.getBaseTerrain().type.name,
+            neighbors = neighborContexts,
+            edgeImagesByPosition = tileSetStrings.edgeImagesByPosition,
+            hasBottomRightRiver = tile.hasBottomRightRiver,
+            hasBottomRiver = tile.hasBottomRiver,
+            hasBottomLeftRiver = tile.hasBottomLeftRiver,
+            bottomRightRiverLocation = tileSetStrings.bottomRightRiver,
+            bottomRiverLocation = tileSetStrings.bottomRiver,
+            bottomLeftRiverLocation = tileSetStrings.bottomLeftRiver
+        )
+    }
+
+    private fun resolveDirectionalBaseRotation(
+        index: Int,
+        fallbackRotation: Float,
+        polygon: FloatArray
+    ): Float {
+        val tile = tileMap.tileList[index]
+        if (!tile.hasTileMap()) return fallbackRotation
+        val center = projectedCenters[index]
+
+        val samples = ArrayList<GlobeDirectionalOverlayOrientationPolicy.DirectionSample>(6)
+        for (direction in NeighborDirection.entries) {
+            val neighbor = tile.tileMap.getClockPositionNeighborTile(tile, direction.clockPosition) ?: continue
+            val neighborPoint = if (projectedVisible[neighbor.zeroBasedIndex]) {
+                projectedCenters[neighbor.zeroBasedIndex].cpy()
+            } else {
+                val neighborWorld = IcosaProjection.projectToSphere(cache.centers[neighbor.zeroBasedIndex], 1f)
+                projectToStage(neighborWorld, Vector2())
+            }
+
+            val expectedDirection = tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
+            if (expectedDirection.isZero(1e-6f)) continue
+            val expectedRotation = GlobeOverlayOrientation.screenRotationDegrees(Vector2.Zero, expectedDirection)
+
+            samples += GlobeDirectionalOverlayOrientationPolicy.DirectionSample(
+                projectedNeighborPoint = neighborPoint,
+                expectedNeighborRotationDegrees = expectedRotation
+            )
+        }
+
+        val directionalReference = GlobeDirectionalOverlayOrientationPolicy.rotationFromDirectionSamples(
+            center = center,
+            samples = samples
+        ) ?: fallbackRotation
+
+        return GlobeOverlayOrientation.screenRotationFromPolygonNearestTo(
+            center = center,
+            polygon = polygon,
+            referenceRotationDegrees = directionalReference
+        )
     }
 
     private fun getTerrainDetailLocations(tile: Tile): List<String> {
@@ -385,5 +722,6 @@ class IcosaGlobeActor(
 
     override fun dispose() {
         shapeRenderer.dispose()
+        polygonBatch.dispose()
     }
 }
