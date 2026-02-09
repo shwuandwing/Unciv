@@ -429,8 +429,10 @@ class IcosaGlobeActor(
             if (!projectedTileExplored[index]) continue
             val tile = tileMap.tileList[index]
             val owner = tile.getOwner() ?: continue
-            val outerColor = owner.nation.getOuterColor()
-            val innerColor = owner.nation.getInnerColor()
+            val borderStyle = GlobeBorderStylePolicy.resolvePassColors(
+                civOuterColor = owner.nation.getOuterColor(),
+                civInnerColor = owner.nation.getInnerColor()
+            )
             val polygon = projectedPolygons[index] ?: continue
             val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
             if (alphaScale <= 0.01f) continue
@@ -458,9 +460,9 @@ class IcosaGlobeActor(
                 val outerThickness = thickness * 1.3f
                 val innerThickness = thickness * 0.72f
                 batch.color.set(
-                    outerColor.r,
-                    outerColor.g,
-                    outerColor.b,
+                    borderStyle.outerPass.r,
+                    borderStyle.outerPass.g,
+                    borderStyle.outerPass.b,
                     parentAlpha * alphaScale * 0.92f
                 )
                 drawRotatedRegion(
@@ -473,9 +475,9 @@ class IcosaGlobeActor(
                     rotation = angle
                 )
                 batch.color.set(
-                    innerColor.r,
-                    innerColor.g,
-                    innerColor.b,
+                    borderStyle.innerPass.r,
+                    borderStyle.innerPass.g,
+                    borderStyle.innerPass.b,
                     parentAlpha * alphaScale * 0.98f
                 )
                 drawRotatedRegion(
@@ -704,30 +706,15 @@ class IcosaGlobeActor(
                 selected = selectedUnit != null && unit == selectedUnit
             )
             if (!spriteDrawn) {
-                val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
-                    unitName = unit.name,
-                    baseUnitName = unit.baseUnit.name,
-                    unitTypeName = unit.type.name,
-                    imageExists = { ImageGetter.imageExists(it) }
+                drawUnitFlagFallback(
+                    batch = batch,
+                    unit = unit,
+                    centerX = markerX,
+                    centerY = markerY,
+                    detailSize = detailSize,
+                    alpha = markerAlpha,
+                    selected = selectedUnit != null && unit == selectedUnit
                 )
-                val iconRegion = getRegion(unitLocation)
-                if (iconRegion != null) {
-                    if (selectedUnit != null && unit == selectedUnit) {
-                        drawCenteredRegion(
-                            batch = batch,
-                            region = circleRegion,
-                            centerX = markerX,
-                            centerY = markerY,
-                            width = detailSize * 0.48f,
-                            height = detailSize * 0.48f,
-                            color = Color(1f, 0.97f, 0.82f, 1f),
-                            alpha = markerAlpha
-                        )
-                    }
-                    drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.36f, detailSize * 0.36f, outer, markerAlpha)
-                    drawCenteredRegion(batch, circleRegion, markerX, markerY, detailSize * 0.26f, detailSize * 0.26f, inner, markerAlpha)
-                    drawCenteredRegion(batch, iconRegion, markerX, markerY, detailSize * 0.17f, detailSize * 0.17f, ImageGetter.CHARCOAL, markerAlpha)
-                }
             }
             drawUnitStatusOverlays(
                 batch = batch,
@@ -805,6 +792,7 @@ class IcosaGlobeActor(
         alpha: Float,
         selected: Boolean
     ): Boolean {
+        if (!UncivGame.Current.settings.showPixelUnits) return false
         val baseLocation = tileSetStrings.getUnitImageLocation(unit)
         val layerLocations = GlobeUnitSpriteLayerPolicy.resolveLayerLocations(baseLocation) { ImageGetter.imageExists(it) }
         if (layerLocations.isEmpty()) return false
@@ -847,6 +835,81 @@ class IcosaGlobeActor(
         return true
     }
 
+    private fun drawUnitFlagFallback(
+        batch: Batch,
+        unit: MapUnit,
+        centerX: Float,
+        centerY: Float,
+        detailSize: Float,
+        alpha: Float,
+        selected: Boolean
+    ) {
+        val style = GlobeUnitFlagStylePolicy.resolve(unit)
+        val baseRegion = getRegion(style.baseLocation) ?: return
+        val innerRegion = getRegion(style.innerLocation)
+        val selectionRegion = if (selected) getRegion(style.selectionLocation) else null
+        val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
+            unitName = unit.name,
+            baseUnitName = unit.baseUnit.name,
+            unitTypeName = unit.type.name,
+            imageExists = { ImageGetter.imageExists(it) }
+        )
+        val iconRegion = getRegion(unitLocation)
+
+        if (selectionRegion != null) {
+            drawCenteredRegion(
+                batch = batch,
+                region = selectionRegion,
+                centerX = centerX,
+                centerY = centerY,
+                width = detailSize * 0.62f,
+                height = detailSize * 0.62f,
+                color = Color.WHITE,
+                alpha = alpha
+            )
+        }
+
+        val flagWidth = detailSize * 0.46f
+        val flagHeight = detailSize * 0.48f
+        val nationInner = unit.civ.nation.getInnerColor()
+        val nationOuter = unit.civ.nation.getOuterColor()
+        drawCenteredRegion(
+            batch = batch,
+            region = baseRegion,
+            centerX = centerX,
+            centerY = centerY,
+            width = flagWidth,
+            height = flagHeight,
+            color = nationInner,
+            alpha = alpha
+        )
+        if (innerRegion != null) {
+            drawCenteredRegion(
+                batch = batch,
+                region = innerRegion,
+                centerX = centerX,
+                centerY = centerY,
+                width = flagWidth,
+                height = flagHeight,
+                color = nationOuter,
+                alpha = alpha
+            )
+        }
+
+        if (iconRegion != null) {
+            drawCenteredRegion(
+                batch = batch,
+                region = iconRegion,
+                centerX = centerX,
+                centerY = centerY,
+                width = detailSize * 0.2f,
+                height = detailSize * 0.2f,
+                color = nationInner,
+                alpha = alpha
+            )
+        }
+    }
+
     private fun drawCityBanners(batch: Batch, parentAlpha: Float, selectedCity: City?) {
         val cityBackground = getRegion(ImageGetter.whiteDotLocation) ?: return
         val capitalRegion = getRegion("OtherIcons/Capital")
@@ -863,7 +926,7 @@ class IcosaGlobeActor(
                 val tile = tileMap.tileList[index]
                 if (!tile.isCityCenter()) continue
                 val city = tile.getCity() ?: continue
-                val owner = tile.getOwner() ?: city.civ
+                val style = GlobeCityBannerStylePolicy.resolve(city, selectedCiv)
                 val polygon = projectedPolygons[index] ?: continue
                 val center = projectedCenters[index]
                 val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
@@ -896,18 +959,13 @@ class IcosaGlobeActor(
                 val bannerX = centerX - bannerWidth / 2f
                 val bannerY = center.y + detailSize * 0.25f
 
-                val borderColor = if (selectedCity != null && selectedCity.getCenterTile() == tile) {
-                    Color(0.95f, 0.93f, 0.78f, 1f)
-                } else owner.nation.getInnerColor()
-                batch.color.set(borderColor.r, borderColor.g, borderColor.b, alpha * 0.95f)
+                batch.color.set(style.borderColor.r, style.borderColor.g, style.borderColor.b, alpha * 0.95f)
                 batch.draw(cityBackground, bannerX - 1.6f, bannerY - 1.6f, bannerWidth + 3.2f, bannerHeight + 3.2f)
 
-                val bgColor = owner.nation.getOuterColor()
-                batch.color.set(bgColor.r, bgColor.g, bgColor.b, alpha * 0.9f)
+                batch.color.set(style.backgroundColor.r, style.backgroundColor.g, style.backgroundColor.b, alpha * 0.9f)
                 batch.draw(cityBackground, bannerX, bannerY, bannerWidth, bannerHeight)
 
-                val textColor = owner.nation.getInnerColor()
-                font.color.set(textColor.r, textColor.g, textColor.b, alpha)
+                font.color.set(style.textColor.r, style.textColor.g, style.textColor.b, alpha)
                 val baselineY = bannerY + bannerHeight / 2f + font.capHeight / 2.2f
                 var cursorX = bannerX + paddingX
                 font.draw(batch, populationText, cursorX, baselineY)
@@ -921,7 +979,7 @@ class IcosaGlobeActor(
                         centerY = bannerY + bannerHeight / 2f,
                         width = capitalSize,
                         height = capitalSize,
-                        color = textColor,
+                        color = style.textColor,
                         alpha = alpha
                     )
                     cursorX += capitalSize + gap
@@ -931,7 +989,6 @@ class IcosaGlobeActor(
                 drawCityDefenceBadge(
                     batch = batch,
                     city = city,
-                    owner = owner,
                     selectedCiv = selectedCiv,
                     centerX = centerX,
                     topY = bannerY + bannerHeight + fontSize * 0.08f,
@@ -966,7 +1023,6 @@ class IcosaGlobeActor(
     private fun drawCityDefenceBadge(
         batch: Batch,
         city: City,
-        owner: Civilization,
         selectedCiv: Civilization?,
         centerX: Float,
         topY: Float,
@@ -985,8 +1041,8 @@ class IcosaGlobeActor(
 
         val borderColor = when {
             selectedCiv == null -> Color(0.12f, 0.12f, 0.14f, 1f)
-            owner == selectedCiv -> Color(1f, 0.93f, 0.78f, 1f)
-            owner.isAtWarWith(selectedCiv) -> Color(0.88f, 0.16f, 0.16f, 1f)
+            city.civ == selectedCiv -> Color.valueOf("#E9E9AC")
+            city.civ.isAtWarWith(selectedCiv) -> Color.valueOf("#E63200")
             else -> Color(0.12f, 0.12f, 0.14f, 1f)
         }
 
