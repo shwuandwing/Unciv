@@ -4,13 +4,11 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.utils.Align
-import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.city.City
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.Spy
 import com.unciv.models.UncivSound
-import com.unciv.models.UnitActionType
 import com.unciv.models.translations.tr
 import com.unciv.ui.audio.SoundPlayer
 import com.unciv.ui.components.extensions.*
@@ -125,27 +123,11 @@ class ConnectRoadOverlayButtonData(val unit: MapUnit, val tile: Tile) : OverlayB
         connectRoadButton.addActor(unitIcon)
 
         connectRoadButton.onActivation(UncivSound.Silent) {
-            connectRoadToTargetTile(worldMapHolder, unit, tile)
+            worldMapHolder.connectRoadToTargetTile(unit, tile)
         }
         connectRoadButton.keyShortcuts.add(KeyboardBinding.ConnectRoad)
 
         return connectRoadButton
-    }
-
-    private fun connectRoadToTargetTile(worldMapHolder: WorldMapHolder, selectedUnit: MapUnit, targetTile: Tile) {
-        selectedUnit.automatedRoadConnectionDestination = targetTile.position
-        selectedUnit.automatedRoadConnectionPath = null
-        selectedUnit.action = UnitActionType.ConnectRoad.value
-        selectedUnit.automated = true
-        UnitAutomation.automateUnitMoves(selectedUnit)
-
-        SoundPlayer.play(UncivSound("wagon"))
-
-        worldMapHolder.worldScreen.shouldUpdate = true
-        worldMapHolder.removeUnitActionOverlay()
-
-        // Make highlighting go away
-        worldMapHolder.worldScreen.bottomUnitTable.selectedUnitIsConnectingRoad = false
     }
 }
 

@@ -25,6 +25,19 @@ class IcosaRenderModePolicyTests {
     }
 
     @Test
+    fun icosaThreeDModeCanBeConfiguredAsInteractive() {
+        val state = IcosaRenderModePolicy.resolve(
+            MapShape.icosahedron,
+            IcosaRenderMode.ThreeD,
+            threeDReadOnly = false
+        )
+
+        Assert.assertEquals(IcosaRenderMode.ThreeD, state.effectiveMode)
+        Assert.assertTrue(state.showToggle)
+        Assert.assertFalse(state.isReadOnly)
+    }
+
+    @Test
     fun icosaTwoDModeIsEditableAndKeepsToggleVisible() {
         val state = IcosaRenderModePolicy.resolve(MapShape.icosahedron, IcosaRenderMode.TwoD)
 
