@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.utils.Disposable
 import com.unciv.UncivGame
+import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.NeighborDirection
 import com.unciv.logic.map.mapunit.MapUnit
@@ -33,6 +34,7 @@ class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
     private val visibilityContextProvider: () -> GlobeVisibilityPolicy.Context = { GlobeVisibilityPolicy.Context() },
     private val selectedUnitProvider: () -> MapUnit? = { null },
+    private val selectedCityProvider: () -> City? = { null },
     private val onTileClick: (Tile) -> Unit = {}
 ) : Actor(), Disposable {
     private data class UnitVisual(
@@ -160,6 +162,7 @@ class IcosaGlobeActor(
         refreshTileMap()
         projectTiles()
         val selectedUnit = selectedUnitProvider()
+        val selectedCity = selectedCityProvider()
 
         batch.end()
 
@@ -169,6 +172,7 @@ class IcosaGlobeActor(
         shapeRenderer.projectionMatrix = stage.camera.combined
         drawTileSurface()
         drawSelectedUnitReachableOverlay(selectedUnit)
+        drawSelectedCityBombardOverlay(selectedCity)
         drawBorders()
         drawSelectedUnitPathPreview(selectedUnit)
 
@@ -332,6 +336,42 @@ class IcosaGlobeActor(
             ) * 0.22f
             if (alpha <= 0.01f) continue
             shapeRenderer.color.set(0.92f, 0.98f, 1f, alpha)
+
+            val vertexCount = polygon.size / 2
+            for (i in 0 until vertexCount) {
+                val next = (i + 1) % vertexCount
+                shapeRenderer.triangle(
+                    center.x,
+                    center.y,
+                    polygon[i * 2],
+                    polygon[i * 2 + 1],
+                    polygon[next * 2],
+                    polygon[next * 2 + 1]
+                )
+            }
+        }
+        shapeRenderer.end()
+    }
+
+    private fun drawSelectedCityBombardOverlay(selectedCity: City?) {
+        if (selectedCity == null || !selectedCity.canBombard()) return
+        val bombardableTiles = com.unciv.logic.battle.TargetHelper.getBombardableTiles(selectedCity)
+            .associateBy { it.zeroBasedIndex }
+        if (bombardableTiles.isEmpty()) return
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        for (index in drawOrder) {
+            if (!projectedTileVisible[index]) continue
+            if (index !in bombardableTiles) continue
+            val polygon = projectedPolygons[index] ?: continue
+            val center = projectedCenters[index]
+            val alpha = GlobeOverlayLodPolicy.overlayAlpha(
+                frameWidth = 18f,
+                frameHeight = 18f,
+                facingDotCamera = projectedFacing[index]
+            ) * 0.24f
+            if (alpha <= 0.01f) continue
+            shapeRenderer.color.set(0.93f, 0.16f, 0.22f, alpha)
 
             val vertexCount = polygon.size / 2
             for (i in 0 until vertexCount) {
