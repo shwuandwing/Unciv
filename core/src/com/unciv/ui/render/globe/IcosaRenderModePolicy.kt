@@ -14,7 +14,11 @@ data class IcosaRenderModeState(
 )
 
 object IcosaRenderModePolicy {
-    fun resolve(shape: String, requestedMode: IcosaRenderMode): IcosaRenderModeState {
+    fun resolve(
+        shape: String,
+        requestedMode: IcosaRenderMode,
+        threeDReadOnly: Boolean = true
+    ): IcosaRenderModeState {
         val isIcosa = shape == MapShape.icosahedron
         if (!isIcosa) {
             return IcosaRenderModeState(
@@ -26,7 +30,7 @@ object IcosaRenderModePolicy {
         return IcosaRenderModeState(
             effectiveMode = requestedMode,
             showToggle = true,
-            isReadOnly = requestedMode == IcosaRenderMode.ThreeD
+            isReadOnly = requestedMode == IcosaRenderMode.ThreeD && threeDReadOnly
         )
     }
 }

@@ -45,7 +45,7 @@ Primary files:
 
 Current mode behavior:
 - Map Editor 3D mode is read-only by product decision.
-- World Screen phase-3 3D mode is also view-only/read-only (navigation + inspection, no gameplay actions).
+- World Screen phase-4 3D mode supports gameplay interactions (tile selection + direct unit/spy commands routed from globe picks).
 - World Screen 3D mode now resolves tile visibility from `fogOfWar` + current viewing civ (unexplored tiles suppressed, explored-but-not-visible tiles fogged).
 
 ### Render pipeline
