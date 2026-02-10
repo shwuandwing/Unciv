@@ -105,6 +105,8 @@ The 3D path now renders additional screen-facing sprite overlays for world/map p
 - tile yield icons (`StatIcons/*`) in world 3D mode when `showTileYields` is enabled
 - world 3D city banner details: population, capital indicator, defense badge, damage bar, and status icons (blockade/connection/resistance/puppet/raze/WLTKD)
 - world 3D unit status details: action badges (sleep/move/automate/etc.) and unit health bars
+- world 3D selected-unit visuals now mirror 2D flag semantics more closely:
+  selected ring uses `UnitFlagSelection*` assets, and action badges use the same white-circle + thin-outline style/opacity rules as 2D `UnitIconGroup`
 
 These markers are only drawn on currently visible tiles (respecting fog visibility), and are LOD-faded near the limb together with other detail overlays.
 
@@ -118,11 +120,17 @@ This avoids drift between 2D and 3D city-banner styling/logic and keeps city inf
 ### World 3D action affordances
 
 World-screen 3D mode now includes selected-unit navigation affordances:
-- reachable-tile highlight fill using current unit movement scope
+- selected-tile marker using the same tileset `Highlight` texture path as 2D (`TileLayerOverlay.showHighlight`)
+- reachable-tile highlighting follows 2D movement rules (`getReachableTilesInCurrentTurn` + `canMoveTo`/unknown-passable checks):
+  either highlight circles (`useCirclesToIndicateMovableTiles`) or light terrain fill (`overlayTerrain` equivalent tint/alpha)
 - hover path preview polyline from selected unit to hovered reachable tile
+- hover destination move badge now includes movement icon + turn count (matching 2D move-overlay intent for multi-turn paths)
 - selected-city bombard range highlight and direct-click bombard execution on valid enemy targets
 - repeated-click stack cycling on city/air-stack tiles so unit selection does not depend on hidden 2D overlay buttons in 3D mode
 - explicit selected city/unit marker emphasis in globe marker rendering
+
+Clickability notes:
+- Globe click gating now respects world fog mode: when `fogOfWar` is disabled (or debug visible-map is enabled), visible globe tiles are not blocked by explored-only click checks.
 
 These are driven from the same `UnitMovement.getDistanceToTiles()` data used by 2D logic, so interaction reachability stays consistent between render modes.
 

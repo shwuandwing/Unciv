@@ -52,6 +52,7 @@ import com.unciv.ui.screens.worldscreen.UndoHandler.Companion.recordUndoCheckpoi
 import com.unciv.ui.screens.worldscreen.WorldScreen
 import com.unciv.ui.screens.worldscreen.bottombar.BattleTableHelpers.battleAnimationDeferred
 import com.unciv.utils.Concurrency
+import com.unciv.utils.DebugUtils
 import com.unciv.utils.Log
 import com.unciv.utils.launchOnGLThread
 import yairm210.purity.annotations.Readonly
@@ -288,6 +289,7 @@ class WorldMapHolder(
     }
 
     private fun tileExistsForViewingCiv(tile: Tile): Boolean {
+        if (!worldScreen.fogOfWar || DebugUtils.VISIBLE_MAP) return true
         if (worldScreen.viewingCiv.hasExplored(tile)) return true
         return tile.neighbors.any { worldScreen.viewingCiv.hasExplored(it) }
     }

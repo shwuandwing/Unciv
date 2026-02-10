@@ -5,6 +5,7 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g2d.Batch
+import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
@@ -30,6 +31,7 @@ import com.unciv.ui.components.tilegroups.citybutton.InfluenceTable
 import com.unciv.ui.components.tilegroups.citybutton.StatusTable
 import com.unciv.ui.components.tilegroups.layers.BorderEdgeGeometry
 import com.unciv.ui.components.tilegroups.layers.OwnershipBorderSegmentResolver
+import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
 import com.unciv.ui.screens.basescreen.BaseScreen
@@ -50,7 +52,7 @@ class IcosaGlobeActor(
     private val onTileClick: (Tile) -> Unit = {},
     private val onCityBannerClick: (City) -> Unit = {}
 ) : Actor(), Disposable {
-        private data class UnitVisual(
+    private data class UnitVisual(
         val unit: MapUnit,
         val yOffsetFactor: Float
     )
@@ -66,6 +68,13 @@ class IcosaGlobeActor(
         val y: Float,
         val width: Float,
         val height: Float
+    )
+
+    private data class SelectedUnitMovementOverlay(
+        val tileIndices: Set<Int>,
+        val color: Color,
+        val alpha: Float,
+        val drawAsCircle: Boolean
     )
 
     private val shapeRenderer = ShapeRenderer()
@@ -106,6 +115,7 @@ class IcosaGlobeActor(
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
     private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
+    private val turnsGlyphLayout = GlyphLayout()
 
     init {
         touchable = Touchable.enabled
@@ -202,6 +212,12 @@ class IcosaGlobeActor(
         projectTiles()
         val selectedUnit = selectedUnitProvider()
         val selectedCity = selectedCityProvider()
+        val selectedUnitMovementOverlay = resolveSelectedUnitMovementOverlay(selectedUnit)
+        selectedTileIndex = when {
+            selectedCity != null -> selectedCity.getCenterTile().zeroBasedIndex
+            selectedUnit != null && selectedUnit.hasTile() -> selectedUnit.getTile().zeroBasedIndex
+            else -> selectedTileIndex
+        }
         val stageBatchColor = Color(batch.color)
 
         batch.end()
@@ -211,12 +227,11 @@ class IcosaGlobeActor(
 
         shapeRenderer.projectionMatrix = stage.camera.combined
         drawTileSurface()
-        drawSelectedUnitReachableOverlay(selectedUnit)
         drawSelectedCityBombardOverlay(selectedCity)
         drawBorders()
         drawSelectedUnitPathPreview(selectedUnit)
 
-        drawPolygonTileOverlays(parentAlpha)
+        drawPolygonTileOverlays(parentAlpha, selectedUnitMovementOverlay)
 
         batch.begin()
         batch.setColor(Color.WHITE)
@@ -228,6 +243,7 @@ class IcosaGlobeActor(
             selectedUnit = selectedUnit,
             selectedCity = selectedCity
         )
+        drawHoveredMovementTurnPreview(batch, parentAlpha, selectedUnit)
         drawCityBanners(batch, parentAlpha, selectedCity)
         batch.setColor(stageBatchColor)
         batch.end()
@@ -314,9 +330,6 @@ class IcosaGlobeActor(
             if (projectedTileExplored[index] && !projectedTileVisible[index]) {
                 color.lerp(tileSetStrings.tileSetConfig.fogOfWarColor.cpy(), 0.6f)
             }
-            if (index == selectedTileIndex && projectedTileExplored[index]) {
-                color.lerp(Color.WHITE, 0.26f)
-            }
             shapeRenderer.color = color
 
             val vertexCount = polygon.size / 2
@@ -365,41 +378,45 @@ class IcosaGlobeActor(
         shapeRenderer.end()
     }
 
-    private fun drawSelectedUnitReachableOverlay(selectedUnit: MapUnit?) {
-        if (selectedUnit == null || !selectedUnit.hasTile()) return
-        val movementScope = selectedUnit.movement.getDistanceToTiles()
-        if (movementScope.isEmpty()) return
+    private fun resolveSelectedUnitMovementOverlay(selectedUnit: MapUnit?): SelectedUnitMovementOverlay? {
+        if (selectedUnit == null || !selectedUnit.hasTile()) return null
+        val reachableTiles = selectedUnit.movement.getReachableTilesInCurrentTurn().toList()
+        if (reachableTiles.isEmpty()) return null
 
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
-        for (index in drawOrder) {
-            if (!projectedTileVisible[index]) continue
-            val tile = tileMap.tileList[index]
-            if (tile == selectedUnit.currentTile) continue
-            if (!movementScope.containsKey(tile)) continue
-            val polygon = projectedPolygons[index] ?: continue
-            val center = projectedCenters[index]
-            val alpha = GlobeOverlayLodPolicy.overlayAlpha(
-                frameWidth = 18f,
-                frameHeight = 18f,
-                facingDotCamera = projectedFacing[index]
-            ) * 0.22f
-            if (alpha <= 0.01f) continue
-            shapeRenderer.color.set(0.92f, 0.98f, 1f, alpha)
+        val settings = GlobeMovementHighlightPolicy.Settings(
+            useCirclesToIndicateMovableTiles = UncivGame.Current.settings.useCirclesToIndicateMovableTiles,
+            singleTapMove = UncivGame.Current.settings.singleTapMove
+        )
+        val unitContext = GlobeMovementHighlightPolicy.UnitContext(
+            movesLikeAirUnits = selectedUnit.baseUnit.movesLikeAirUnits,
+            isPreparingParadrop = selectedUnit.isPreparingParadrop()
+        )
 
-            val vertexCount = polygon.size / 2
-            for (i in 0 until vertexCount) {
-                val next = (i + 1) % vertexCount
-                shapeRenderer.triangle(
-                    center.x,
-                    center.y,
-                    polygon[i * 2],
-                    polygon[i * 2 + 1],
-                    polygon[next * 2],
-                    polygon[next * 2 + 1]
-                )
-            }
+        val highlightedIndices = HashSet<Int>(reachableTiles.size)
+        var resolvedStyle: GlobeMovementHighlightPolicy.Highlight? = null
+
+        for (tile in reachableTiles) {
+            val highlight = GlobeMovementHighlightPolicy.resolve(
+                unit = unitContext,
+                tile = GlobeMovementHighlightPolicy.TileContext(
+                    isReachableThisTurn = true,
+                    canMoveTo = selectedUnit.movement.canMoveTo(tile),
+                    assumePassableUnknown = selectedUnit.movement.isUnknownTileWeShouldAssumeToBePassable(tile)
+                ),
+                settings = settings
+            ) ?: continue
+            highlightedIndices += tile.zeroBasedIndex
+            if (resolvedStyle == null) resolvedStyle = highlight
         }
-        shapeRenderer.end()
+
+        val style = resolvedStyle ?: return null
+        if (highlightedIndices.isEmpty()) return null
+        return SelectedUnitMovementOverlay(
+            tileIndices = highlightedIndices,
+            color = style.color,
+            alpha = style.alpha,
+            drawAsCircle = style.drawAsCircle
+        )
     }
 
     private fun drawSelectedCityBombardOverlay(selectedCity: City?) {
@@ -456,6 +473,98 @@ class IcosaGlobeActor(
             previousCenter = currentCenter
         }
         shapeRenderer.end()
+    }
+
+    private fun drawHoveredMovementTurnPreview(batch: Batch, parentAlpha: Float, selectedUnit: MapUnit?) {
+        if (selectedUnit == null || !selectedUnit.hasTile()) return
+        if (hoveredTileIndex !in tileMap.tileList.indices) return
+        val targetTile = tileMap.tileList[hoveredTileIndex]
+        if (targetTile == selectedUnit.getTile()) return
+        val turnsToDestination = GlobeMovementTurnPreviewPolicy.resolveTurns(
+            unit = GlobeMovementTurnPreviewPolicy.UnitContext(
+                movesLikeAirUnits = selectedUnit.baseUnit.movesLikeAirUnits,
+                isPreparingParadrop = selectedUnit.isPreparingParadrop()
+            ),
+            canReach = selectedUnit.movement.canReach(targetTile),
+            shortestPathSizeProvider = { selectedUnit.movement.getShortestPath(targetTile).size }
+        ) ?: return
+        if (turnsToDestination <= 0) return
+
+        val targetIndex = targetTile.zeroBasedIndex
+        if (!projectedTileVisible[targetIndex] || !projectedTileExplored[targetIndex]) return
+
+        val polygon = projectedPolygons[targetIndex] ?: return
+        val center = projectedCenters[targetIndex]
+        val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, projectedOverlayRotations[targetIndex])
+        val detailSize = min(frame.width, frame.height)
+        val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
+            frameWidth = frame.width,
+            frameHeight = frame.height,
+            facingDotCamera = projectedFacing[targetIndex]
+        )
+        if (lodAlpha <= 0.05f) return
+        val alpha = parentAlpha * lodAlpha
+
+        val circleRegion = getRegion(ImageGetter.circleLocation) ?: return
+        val movementRegion = getRegion("StatIcons/Movement")
+        val badgeCenterX = center.x
+        val badgeCenterY = center.y + detailSize * 0.22f
+        val outerSize = detailSize * 0.42f
+        val innerSize = detailSize * 0.39f
+        val iconSize = detailSize * 0.18f
+
+        drawCenteredRegion(
+            batch = batch,
+            region = circleRegion,
+            centerX = badgeCenterX,
+            centerY = badgeCenterY,
+            width = outerSize,
+            height = outerSize,
+            color = ImageGetter.CHARCOAL,
+            alpha = alpha
+        )
+        drawCenteredRegion(
+            batch = batch,
+            region = circleRegion,
+            centerX = badgeCenterX,
+            centerY = badgeCenterY,
+            width = innerSize,
+            height = innerSize,
+            color = Color.WHITE,
+            alpha = alpha
+        )
+        if (movementRegion != null) {
+            drawCenteredRegion(
+                batch = batch,
+                region = movementRegion,
+                centerX = badgeCenterX,
+                centerY = badgeCenterY + detailSize * 0.07f,
+                width = iconSize,
+                height = iconSize,
+                color = ImageGetter.CHARCOAL,
+                alpha = alpha
+            )
+        }
+
+        val font = Fonts.font
+        val oldColor = Color(font.color)
+        val oldScaleX = font.data.scaleX
+        val oldScaleY = font.data.scaleY
+        val textScale = max(0.45f, detailSize / 44f)
+        font.data.setScale(textScale)
+        font.color.set(ImageGetter.CHARCOAL.r, ImageGetter.CHARCOAL.g, ImageGetter.CHARCOAL.b, alpha)
+
+        val turnsText = turnsToDestination.toString()
+        turnsGlyphLayout.setText(font, turnsText)
+        font.draw(
+            batch,
+            turnsText,
+            badgeCenterX - turnsGlyphLayout.width / 2f,
+            badgeCenterY - detailSize * 0.08f
+        )
+
+        font.color.set(oldColor)
+        font.data.setScale(oldScaleX, oldScaleY)
     }
 
     private fun drawOwnershipBorderSprites(batch: Batch, parentAlpha: Float) {
@@ -763,7 +872,15 @@ class IcosaGlobeActor(
             val inner = unit.civ.nation.getInnerColor()
             val markerX = center.x
             val markerY = center.y + detailSize * visual.yOffsetFactor
-            val spriteDrawn = drawUnitSprite(
+            drawUnitSprite(
+                batch = batch,
+                unit = unit,
+                centerX = markerX,
+                centerY = markerY,
+                detailSize = detailSize,
+                alpha = markerAlpha
+            )
+            drawUnitFlagFallback(
                 batch = batch,
                 unit = unit,
                 centerX = markerX,
@@ -772,24 +889,15 @@ class IcosaGlobeActor(
                 alpha = markerAlpha,
                 selected = selectedUnit != null && unit == selectedUnit
             )
-            if (!spriteDrawn) {
-                drawUnitFlagFallback(
-                    batch = batch,
-                    unit = unit,
-                    centerX = markerX,
-                    centerY = markerY,
-                    detailSize = detailSize,
-                    alpha = markerAlpha,
-                    selected = selectedUnit != null && unit == selectedUnit
-                )
-            }
             drawUnitStatusOverlays(
                 batch = batch,
                 unit = unit,
                 centerX = markerX,
                 centerY = markerY,
                 detailSize = detailSize,
-                alpha = markerAlpha
+                alpha = markerAlpha,
+                selected = selectedUnit != null && unit == selectedUnit,
+                viewingCiv = viewingCiv
             )
         }
     }
@@ -800,13 +908,22 @@ class IcosaGlobeActor(
         centerX: Float,
         centerY: Float,
         detailSize: Float,
-        alpha: Float
+        alpha: Float,
+        selected: Boolean,
+        viewingCiv: Civilization?
     ) {
-        if (detailSize < 16f) return
+        if (detailSize < 14f) return
 
         val actionLocation = GlobeUnitStatusOverlayPolicy.actionIconLocation(unit)
         val actionRegion = getRegion(actionLocation)
         val circleRegion = getRegion(ImageGetter.circleLocation)
+        val shouldFadeAction =
+            viewingCiv != null
+                && unit.civ == viewingCiv
+                && UncivGame.Current.settings.unitIconOpacity == 1f
+                && ((!selected && !unit.isIdle()) || (selected && unit.isIdle()))
+        val actionAlpha = if (shouldFadeAction) alpha * 0.5f else alpha
+
         if (actionRegion != null && circleRegion != null) {
             val actionSize = detailSize * 0.15f
             val actionCircleSize = detailSize * 0.23f
@@ -815,10 +932,20 @@ class IcosaGlobeActor(
                 region = circleRegion,
                 centerX = centerX + detailSize * 0.19f,
                 centerY = centerY - detailSize * 0.18f,
+                width = actionCircleSize + 2f,
+                height = actionCircleSize + 2f,
+                color = ImageGetter.CHARCOAL,
+                alpha = actionAlpha
+            )
+            drawCenteredRegion(
+                batch = batch,
+                region = circleRegion,
+                centerX = centerX + detailSize * 0.19f,
+                centerY = centerY - detailSize * 0.18f,
                 width = actionCircleSize,
                 height = actionCircleSize,
-                color = Color(0.18f, 0.2f, 0.22f, 1f),
-                alpha = alpha
+                color = Color.WHITE,
+                alpha = actionAlpha
             )
             drawCenteredRegion(
                 batch = batch,
@@ -827,8 +954,8 @@ class IcosaGlobeActor(
                 centerY = centerY - detailSize * 0.18f,
                 width = actionSize,
                 height = actionSize,
-                color = ImageGetter.CHARCOAL,
-                alpha = alpha
+                color = Color.WHITE,
+                alpha = actionAlpha
             )
         }
 
@@ -856,8 +983,7 @@ class IcosaGlobeActor(
         centerX: Float,
         centerY: Float,
         detailSize: Float,
-        alpha: Float,
-        selected: Boolean
+        alpha: Float
     ): Boolean {
         if (!UncivGame.Current.settings.showPixelUnits) return false
         val baseLocation = tileSetStrings.getUnitImageLocation(unit)
@@ -868,19 +994,6 @@ class IcosaGlobeActor(
         if (layerRegions.isEmpty()) return false
 
         val spriteSize = detailSize * 0.95f
-        val circleRegion = getRegion(ImageGetter.circleLocation)
-        if (selected && circleRegion != null) {
-            drawCenteredRegion(
-                batch = batch,
-                region = circleRegion,
-                centerX = centerX,
-                centerY = centerY,
-                width = detailSize * 0.56f,
-                height = detailSize * 0.56f,
-                color = Color(1f, 0.97f, 0.82f, 1f),
-                alpha = alpha
-            )
-        }
 
         for ((index, region) in layerRegions.withIndex()) {
             val layerColor = when (index) {
@@ -916,9 +1029,9 @@ class IcosaGlobeActor(
         val innerRegion = getRegion(style.innerLocation)
         val selectionRegion = if (selected) getRegion(style.selectionLocation) else null
         val unitLocation = GlobeSpriteOverlayResolver.unitIconLocation(
-            unitName = unit.name,
+            unitName = unit.baseUnit.name,
             baseUnitName = unit.baseUnit.name,
-            unitTypeName = unit.type.name,
+            unitTypeName = unit.baseUnit.type.name,
             imageExists = { ImageGetter.imageExists(it) }
         )
         val iconRegion = getRegion(unitLocation)
@@ -971,7 +1084,7 @@ class IcosaGlobeActor(
                 centerY = centerY,
                 width = detailSize * 0.2f,
                 height = detailSize * 0.2f,
-                color = nationInner,
+                color = ImageGetter.CHARCOAL,
                 alpha = alpha
             )
         }
@@ -1107,7 +1220,10 @@ class IcosaGlobeActor(
         return overlayRegionCache.getOrPut(location) { ImageGetter.getDrawableOrNull(location)?.region }
     }
 
-    private fun drawPolygonTileOverlays(parentAlpha: Float) {
+    private fun drawPolygonTileOverlays(
+        parentAlpha: Float,
+        selectedUnitMovementOverlay: SelectedUnitMovementOverlay?
+    ) {
         polygonBatch.projectionMatrix = stage.camera.combined
         polygonBatch.begin()
         val visibilityContext = visibilityContextProvider()
@@ -1181,6 +1297,45 @@ class IcosaGlobeActor(
                     tile,
                     overlayRotation,
                     parentAlpha * overlayLodAlpha
+                )
+            }
+
+            if (index == selectedTileIndex && projectedTileVisible[index]) {
+                drawPolygonLocationIfExists(
+                    overlay = GlobeCenterOverlayPolicy.Overlay(
+                        location = tileSetStrings.highlight,
+                        alpha = 0.3f
+                    ),
+                    polygon = polygon,
+                    frameCenterX = frame.centerX,
+                    frameCenterY = frame.centerY,
+                    frameWidth = frame.width,
+                    frameHeight = frame.height,
+                    tile = tile,
+                    rotation = rotation,
+                    parentAlpha = parentAlpha
+                )
+            }
+
+            if (selectedUnitMovementOverlay != null
+                && index in selectedUnitMovementOverlay.tileIndices
+            ) {
+                val moveOverlayLocation = if (selectedUnitMovementOverlay.drawAsCircle)
+                    tileSetStrings.highlight else tileSetStrings.hexagon
+                drawPolygonLocationIfExists(
+                    overlay = GlobeCenterOverlayPolicy.Overlay(
+                        location = moveOverlayLocation,
+                        alpha = selectedUnitMovementOverlay.alpha
+                    ),
+                    polygon = polygon,
+                    frameCenterX = frame.centerX,
+                    frameCenterY = frame.centerY,
+                    frameWidth = frame.width,
+                    frameHeight = frame.height,
+                    tile = tile,
+                    rotation = rotation,
+                    parentAlpha = parentAlpha * detailLodAlpha,
+                    tintColor = selectedUnitMovementOverlay.color
                 )
             }
 
