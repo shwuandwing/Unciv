@@ -88,6 +88,9 @@ Important details for parity with 2D:
 - Directional overlays use `0` texel UV inset to avoid trimming border pixels needed for coast/river contact.
 - UV V-axis mapping for unflipped atlas regions is inverted for Y-up polygon mapping, otherwise bottom river textures appear on opposite edges.
 - Ownership border strips are rendered in two passes (nation outer color + nation inner color) to mirror 2D civ border semantics.
+- Ownership border strips use edge-local placement in 3D:
+  for each ownership segment, select the projected polygon edge facing that neighbor tile, then anchor/rotate the strip at that edge midpoint.
+  This avoids frame-anchor drift near the globe limb and keeps border alignment closer to river edge behavior.
 - In 3D `Batch` passes, use `batch.setColor(...)` (not direct `batch.color` mutation) and reset color around Scene2D widget draws.
   Direct `batch.color` mutation can leak packed tint state across draws and incorrectly recolor ownership borders.
 
@@ -136,3 +139,4 @@ Important categories:
 - Directional overlay frame-basis selection (`regular` vs `directional`).
 - Directional overlay UV inset and V-axis window orientation.
 - Saved-map regression coverage for river-edge selection (`android/assets/maps/Test`, tile `(105,46)`).
+- Ownership border strip placement policies, including projected-edge selection and edge-midpoint anchoring.
