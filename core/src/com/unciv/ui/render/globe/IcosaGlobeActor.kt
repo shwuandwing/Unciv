@@ -450,14 +450,20 @@ class IcosaGlobeActor(
                 civOuterColor = owner.nation.getOuterColor(),
                 civInnerColor = owner.nation.getInnerColor()
             )
-            val regularRotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
             val directionalBaseRotation = projectedDirectionalOverlayRotations[index]
-            val baseFrame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, regularRotation)
             val segments = OwnershipBorderSegmentResolver.resolve(tile)
             if (segments.isEmpty()) continue
             for (segment in segments) {
                 val neighborIndex = segment.neighbor.zeroBasedIndex
                 if (!projectedVisible[neighborIndex]) continue
+                val neighborCenter = projectedCenters[neighborIndex]
+                val edge = GlobeBorderStripPlacementPolicy.resolveEdgeFacingNeighbor(
+                    polygon = polygon,
+                    centerX = center.x,
+                    centerY = center.y,
+                    neighborX = neighborCenter.x,
+                    neighborY = neighborCenter.y
+                ) ?: continue
 
                 val segmentRotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(
                     directionalBaseRotation + BorderEdgeGeometry.borderAngleDegrees(segment.angleDirection)
@@ -466,10 +472,12 @@ class IcosaGlobeActor(
                     tileSetStrings.orFallback { getBorder(segment.borderShapeString, "Inner") }
                 ) ?: continue
                 val innerPlacement = GlobeBorderStripPlacementPolicy.resolve(
-                    frame = baseFrame,
+                    edge = edge,
+                    tileCenterX = center.x,
+                    tileCenterY = center.y,
                     regionWidth = innerRegion.regionWidth,
                     regionHeight = innerRegion.regionHeight,
-                    rotationDegrees = segmentRotation
+                    preferredRotationDegrees = segmentRotation
                 )
                 batch.setColor(
                     borderStyle.innerPass.r,
@@ -495,10 +503,12 @@ class IcosaGlobeActor(
                     tileSetStrings.orFallback { getBorder(segment.borderShapeString, "Outer") }
                 ) ?: continue
                 val outerPlacement = GlobeBorderStripPlacementPolicy.resolve(
-                    frame = baseFrame,
+                    edge = edge,
+                    tileCenterX = center.x,
+                    tileCenterY = center.y,
                     regionWidth = outerRegion.regionWidth,
                     regionHeight = outerRegion.regionHeight,
-                    rotationDegrees = segmentRotation
+                    preferredRotationDegrees = segmentRotation
                 )
                 batch.setColor(
                     borderStyle.outerPass.r,
