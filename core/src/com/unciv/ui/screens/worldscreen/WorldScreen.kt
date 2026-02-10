@@ -364,10 +364,7 @@ class WorldScreen(
 
     private fun addRenderModeToggle() {
         renderModeToggle.defaults().pad(2f)
-        renderModeToggle.background = BaseScreen.skinStrings.getUiBackground(
-            "MapEditor/RenderModeToggle",
-            tintColor = BaseScreen.clearColor.cpy().apply { a = 0.88f }
-        )
+        renderModeToggle.background = null
         map2DButton.onClick {
             requestedRenderMode = IcosaRenderMode.TwoD
             refreshRenderModeState()
