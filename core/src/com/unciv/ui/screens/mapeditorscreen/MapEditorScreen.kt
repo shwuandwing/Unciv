@@ -256,7 +256,11 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         naturalWondersNeedRefresh = true
 
         if (UncivGame.Current.settings.showZoomButtons) {
-            zoomController = ZoomButtonPair(newHolder)
+            zoomController?.remove()
+            zoomController = ZoomButtonPair(
+                zoomInAction = { zoomInActiveView() },
+                zoomOutAction = { zoomOutActiveView() }
+            )
             zoomController!!.setPosition(10f, 10f)
             stage.addActor(zoomController)
         }
@@ -400,6 +404,19 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         IcosaRenderModePolicy
             .resolve(tileMap.mapParameters.shape, requestedRenderMode)
             .isReadOnly
+
+    private fun isGlobeRenderMode(): Boolean {
+        val state = IcosaRenderModePolicy.resolve(tileMap.mapParameters.shape, requestedRenderMode)
+        return state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+    }
+
+    private fun zoomInActiveView() {
+        if (isGlobeRenderMode()) globeActor?.zoomIn() else mapHolder.zoomIn()
+    }
+
+    private fun zoomOutActiveView() {
+        if (isGlobeRenderMode()) globeActor?.zoomOut() else mapHolder.zoomOut()
+    }
 
     private fun refreshRenderModeState() {
         val state = IcosaRenderModePolicy.resolve(tileMap.mapParameters.shape, requestedRenderMode)

@@ -199,6 +199,14 @@ class IcosaGlobeActor(
         cameraController.resetToNorth()
     }
 
+    fun zoomIn() {
+        cameraController.zoomBy(-1f)
+    }
+
+    fun zoomOut() {
+        cameraController.zoomBy(1f)
+    }
+
     @Readonly
     fun getCameraViewState(): GlobeCameraController.ViewState = cameraController.snapshot()
 

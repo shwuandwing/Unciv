@@ -133,7 +133,10 @@ class WorldScreen(
     /** Bottom left widget holding information about a selected unit or city */
     internal val bottomUnitTable = UnitTable(this)
     private val battleTable = BattleTable(this)
-    private val zoomController = ZoomButtonPair(mapHolder)
+    private val zoomController = ZoomButtonPair(
+        zoomInAction = { zoomInActiveView() },
+        zoomOutAction = { zoomOutActiveView() }
+    )
     internal val minimapWrapper = MinimapHolder(mapHolder)
     private val bottomTileInfoTable = TileInfoTable(this)
     internal val notificationsScroll = NotificationsScroll(this)
@@ -189,7 +192,7 @@ class WorldScreen(
         stage.addActor(chatButton)
 
         stage.addActor(zoomController)
-        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isGlobeRenderMode()
+        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons
         zoomController.touchable = if (zoomController.isVisible) Touchable.enabled else Touchable.disabled
 
         stage.addActor(bottomUnitTable)
@@ -315,8 +318,8 @@ class WorldScreen(
         globalShortcuts.add(KeyboardBinding.MusicPlayer) {
             WorldScreenMusicPopup(this).open(force = true)
         }
-        globalShortcuts.add(Input.Keys.NUMPAD_ADD) { this.mapHolder.zoomIn() }    //   '+' Zoom
-        globalShortcuts.add(Input.Keys.NUMPAD_SUBTRACT) { this.mapHolder.zoomOut() }    //   '-' Zoom
+        globalShortcuts.add(Input.Keys.NUMPAD_ADD) { zoomInActiveView() }    //   '+' Zoom
+        globalShortcuts.add(Input.Keys.NUMPAD_SUBTRACT) { zoomOutActiveView() }    //   '-' Zoom
         globalShortcuts.add(KeyboardBinding.ToggleUI) { toggleUI() }
         globalShortcuts.add(KeyboardBinding.ToggleYieldDisplay) { minimapWrapper.yieldImageButton.toggle() }
         globalShortcuts.add(KeyboardBinding.ToggleWorkedTilesDisplay) { minimapWrapper.populationImageButton.toggle() }
@@ -358,6 +361,14 @@ class WorldScreen(
     private fun isGlobeRenderMode(): Boolean {
         val state = resolveRenderModeState()
         return state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+    }
+
+    private fun zoomInActiveView() {
+        if (isGlobeRenderMode()) globeActor?.zoomIn() else mapHolder.zoomIn()
+    }
+
+    private fun zoomOutActiveView() {
+        if (isGlobeRenderMode()) globeActor?.zoomOut() else mapHolder.zoomOut()
     }
 
     internal fun isReadOnlyRenderMode(): Boolean = resolveRenderModeState().isReadOnly
@@ -634,7 +645,7 @@ class WorldScreen(
             )
         }
 
-        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons && !isGlobeRenderMode()
+        zoomController.isVisible = UncivGame.Current.settings.showZoomButtons
         zoomController.touchable = if (zoomController.isVisible) Touchable.enabled else Touchable.disabled
 
         // if we use the clone, then when we update viewable tiles

@@ -9,13 +9,21 @@ import com.unciv.ui.components.widgets.ZoomableScrollPane
 import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.extensions.setFontSize
 
-class ZoomButtonPair(private val mapHolder: ZoomableScrollPane) : Table(BaseScreen.skin) {
+class ZoomButtonPair(
+    private val zoomInAction: () -> Unit,
+    private val zoomOutAction: () -> Unit
+) : Table(BaseScreen.skin) {
+    constructor(mapHolder: ZoomableScrollPane) : this(
+        zoomInAction = { mapHolder.zoomIn() },
+        zoomOutAction = { mapHolder.zoomOut() }
+    )
+
     init {
         addButton("+") {
-            mapHolder.zoomIn()
+            zoomInAction()
         }.padRight(10f)
         addButton("–") {  // figure dash U+2013, not minus, looks better
-            mapHolder.zoomOut()
+            zoomOutAction()
         }
         pack()
     }
