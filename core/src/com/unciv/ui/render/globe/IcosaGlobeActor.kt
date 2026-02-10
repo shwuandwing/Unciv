@@ -1159,6 +1159,10 @@ class IcosaGlobeActor(
                 )
                 continue
             }
+            val fogVisual = GlobeFogOfWarVisualPolicy.resolve(
+                isCurrentlyVisible = projectedTileVisible[index],
+                fogOfWarColor = tileSetStrings.tileSetConfig.fogOfWarColor
+            )
 
             val detailLayers = getTerrainDetailLocations(tile)
             for (location in detailLayers) {
@@ -1171,7 +1175,8 @@ class IcosaGlobeActor(
                     detailHeight,
                     tile,
                     rotation,
-                    parentAlpha * detailLodAlpha
+                    parentAlpha * detailLodAlpha * fogVisual.alphaScale,
+                    tintColor = fogVisual.tintColor
                 )
             }
 
@@ -1197,7 +1202,8 @@ class IcosaGlobeActor(
                     overlayHeight,
                     tile,
                     overlayRotation,
-                    parentAlpha * overlayLodAlpha
+                    parentAlpha * overlayLodAlpha * fogVisual.alphaScale,
+                    tintColor = fogVisual.tintColor
                 )
             }
 
