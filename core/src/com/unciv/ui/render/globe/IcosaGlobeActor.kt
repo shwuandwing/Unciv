@@ -46,7 +46,8 @@ class IcosaGlobeActor(
     private val selectedUnitProvider: () -> MapUnit? = { null },
     private val selectedCityProvider: () -> City? = { null },
     private val selectedCivProvider: () -> Civilization? = { null },
-    private val onTileClick: (Tile) -> Unit = {}
+    private val onTileClick: (Tile) -> Unit = {},
+    private val onCityBannerClick: (City) -> Unit = {}
 ) : Actor(), Disposable {
         private data class UnitVisual(
         val unit: MapUnit,
@@ -56,6 +57,14 @@ class IcosaGlobeActor(
     private data class CityBannerWidget(
         val root: Table,
         val cityTable: CityTable
+    )
+
+    private data class CityBannerHitBox(
+        val city: City,
+        val x: Float,
+        val y: Float,
+        val width: Float,
+        val height: Float
     )
 
     private val shapeRenderer = ShapeRenderer()
@@ -95,6 +104,7 @@ class IcosaGlobeActor(
     private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
+    private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
 
     init {
         touchable = Touchable.enabled
@@ -126,6 +136,11 @@ class IcosaGlobeActor(
                 if (wasDragging) return
 
                 val stageCoords = localToStageCoordinates(Vector2(x, y))
+                val cityFromBanner = pickCityBanner(stageCoords.x, stageCoords.y)
+                if (cityFromBanner != null) {
+                    onCityBannerClick(cityFromBanner)
+                    return
+                }
                 val tile = pickTile(stageCoords.x, stageCoords.y) ?: return
                 selectedTileIndex = tile.zeroBasedIndex
                 hoveredTileIndex = tile.zeroBasedIndex
@@ -959,6 +974,7 @@ class IcosaGlobeActor(
         val visibilityContext = visibilityContextProvider()
         val viewingPlayer = visibilityContext.viewingCiv
         val previousColor = Color(batch.color)
+        cityBannerHitBoxes.clear()
 
         for (index in drawOrder) {
             if (!projectedTileVisible[index]) continue
@@ -985,6 +1001,13 @@ class IcosaGlobeActor(
                 center.x - widget.root.width / 2f,
                 center.y + detailSize * 0.25f
             )
+            cityBannerHitBoxes += CityBannerHitBox(
+                city = city,
+                x = widget.root.x,
+                y = widget.root.y,
+                width = widget.root.width,
+                height = widget.root.height
+            )
             widget.root.color.a = alpha
             batch.setColor(Color.WHITE)
             widget.root.draw(batch, 1f)
@@ -993,6 +1016,16 @@ class IcosaGlobeActor(
         }
 
         batch.setColor(previousColor)
+    }
+
+    private fun pickCityBanner(stageX: Float, stageY: Float): City? {
+        for (i in cityBannerHitBoxes.lastIndex downTo 0) {
+            val box = cityBannerHitBoxes[i]
+            val withinX = stageX >= box.x && stageX <= box.x + box.width
+            val withinY = stageY >= box.y && stageY <= box.y + box.height
+            if (withinX && withinY) return box.city
+        }
+        return null
     }
 
     private fun buildCityBannerWidget(

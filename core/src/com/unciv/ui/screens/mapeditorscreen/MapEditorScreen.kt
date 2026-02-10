@@ -385,9 +385,10 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         globeActor = null
         if (tileMap.mapParameters.shape != MapShape.icosahedron) return
 
-        val actor = IcosaGlobeActor(tileMapProvider = { tileMap }) { tile ->
-            tileClickHandler?.invoke(tile)
-        }
+        val actor = IcosaGlobeActor(
+            tileMapProvider = { tileMap },
+            onTileClick = { tile -> tileClickHandler?.invoke(tile) }
+        )
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)
         globeActor = actor
