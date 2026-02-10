@@ -26,12 +26,14 @@ import com.unciv.models.metadata.GameSetupInfo
 import com.unciv.models.ruleset.Event
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.unique.UniqueType
+import com.unciv.ui.components.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.components.extensions.centerX
 import com.unciv.ui.components.extensions.darken
 import com.unciv.ui.components.input.KeyShortcutDispatcherVeto
 import com.unciv.ui.components.input.KeyboardBinding
 import com.unciv.ui.components.input.KeyboardPanningListener
 import com.unciv.ui.components.input.onClick
+import com.unciv.ui.components.extensions.toImageButton
 import com.unciv.ui.components.extensions.toTextButton
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popups.AuthPopup
@@ -86,6 +88,7 @@ import kotlinx.coroutines.coroutineScope
 import yairm210.purity.annotations.Readonly
 import java.util.Timer
 import kotlin.concurrent.timer
+import kotlin.math.max
 
 /**
  * Do not create this screen without seriously thinking about the implications: this is the single most memory-intensive class in the application.
@@ -144,6 +147,12 @@ class WorldScreen(
     private val renderModeToggle = Table(skin)
     private val map2DButton = "2D".toTextButton()
     private val map3DButton = "3D".toTextButton()
+    private val resetNorthButton = "TechIcons/Compass".toImageButton(
+        iconSize = 22f,
+        circleSize = 36f,
+        circleColor = BaseScreen.clearColor.cpy().apply { a = 0.88f },
+        overColor = Color.GOLD
+    )
     private var requestedRenderMode = IcosaRenderMode.TwoD
     private var globeActor: IcosaGlobeActor? = null
     private var globeViewState: GlobeCameraController.ViewState? = null
@@ -357,7 +366,7 @@ class WorldScreen(
         renderModeToggle.defaults().pad(2f)
         renderModeToggle.background = BaseScreen.skinStrings.getUiBackground(
             "MapEditor/RenderModeToggle",
-            tintColor = Color(0.1f, 0.1f, 0.16f, 0.82f)
+            tintColor = BaseScreen.clearColor.cpy().apply { a = 0.88f }
         )
         map2DButton.onClick {
             requestedRenderMode = IcosaRenderMode.TwoD
@@ -371,6 +380,12 @@ class WorldScreen(
         renderModeToggle.add(map3DButton).minWidth(54f)
         renderModeToggle.pack()
         stage.addActor(renderModeToggle)
+
+        resetNorthButton.onClick {
+            globeActor?.resetToNorth()
+        }
+        resetNorthButton.addTooltip("Reset to north", 18f, targetAlign = Align.bottom, hideIcons = true)
+        stage.addActor(resetNorthButton)
     }
 
     private fun rebuildGlobeActor() {
@@ -440,6 +455,11 @@ class WorldScreen(
         val spacing = 8f
         val toggleWidth = renderModeToggle.width
         val toggleHeight = renderModeToggle.height
+        val resetVisible = resetNorthButton.isVisible
+        val resetWidth = if (resetVisible) resetNorthButton.width else 0f
+        val resetHeight = if (resetVisible) resetNorthButton.height else 0f
+        val controlsWidth = toggleWidth + if (resetVisible) spacing + resetWidth else 0f
+        val controlsHeight = max(toggleHeight, resetHeight)
         var targetX = margin
         var targetTopY = if (topBar.isVisible) topBar.y - spacing else stage.height - margin
 
@@ -449,8 +469,8 @@ class WorldScreen(
             && techPolicyAndDiplomacy.height > 0f
         if (controlsVisible) {
             val toggleLeft = targetX
-            val toggleRight = targetX + toggleWidth
-            val toggleBottom = targetTopY - toggleHeight
+            val toggleRight = targetX + controlsWidth
+            val toggleBottom = targetTopY - controlsHeight
             val toggleTop = targetTopY
             val controlsLeft = techPolicyAndDiplomacy.x
             val controlsRight = controlsLeft + techPolicyAndDiplomacy.width
@@ -462,7 +482,7 @@ class WorldScreen(
                 && toggleTop > controlsBottom
             if (overlaps) {
                 targetX = controlsRight + spacing
-                val maxX = stage.width - margin - toggleWidth
+                val maxX = stage.width - margin - controlsWidth
                 if (targetX > maxX) {
                     targetX = margin
                     targetTopY = controlsBottom - spacing
@@ -470,12 +490,15 @@ class WorldScreen(
             }
         }
 
-        val maxX = stage.width - margin - toggleWidth
+        val maxX = stage.width - margin - controlsWidth
         val clampedX = if (maxX >= margin) targetX.coerceIn(margin, maxX) else margin
-        val minTopY = toggleHeight + margin
+        val minTopY = controlsHeight + margin
         val maxTopY = stage.height - margin
         val clampedTopY = if (maxTopY >= minTopY) targetTopY.coerceIn(minTopY, maxTopY) else maxTopY
         renderModeToggle.setPosition(clampedX, clampedTopY, Align.topLeft)
+        if (resetVisible) {
+            resetNorthButton.setPosition(clampedX + toggleWidth + spacing, clampedTopY, Align.topLeft)
+        }
     }
 
     private fun refreshRenderModeState() {
@@ -485,6 +508,8 @@ class WorldScreen(
 
         renderModeToggle.isVisible = uiEnabled && state.showToggle
         renderModeToggle.touchable = if (renderModeToggle.isVisible) Touchable.enabled else Touchable.disabled
+        resetNorthButton.isVisible = uiEnabled && state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+        resetNorthButton.touchable = if (resetNorthButton.isVisible) Touchable.enabled else Touchable.disabled
         map2DButton.isDisabled = state.effectiveMode == IcosaRenderMode.TwoD
         map3DButton.isDisabled = state.effectiveMode == IcosaRenderMode.ThreeD
         map2DButton.color = if (state.effectiveMode == IcosaRenderMode.TwoD) Color.GOLD else Color.WHITE
