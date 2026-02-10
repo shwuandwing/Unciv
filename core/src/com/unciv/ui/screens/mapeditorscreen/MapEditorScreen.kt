@@ -355,10 +355,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
 
     private fun addRenderModeToggle() {
         renderModeToggle.defaults().pad(2f)
-        renderModeToggle.background = BaseScreen.skinStrings.getUiBackground(
-            "MapEditor/RenderModeToggle",
-            tintColor = Color(0.1f, 0.1f, 0.16f, 0.82f)
-        )
+        renderModeToggle.background = null
         map2DButton.onClick {
             requestedRenderMode = IcosaRenderMode.TwoD
             refreshRenderModeState()
