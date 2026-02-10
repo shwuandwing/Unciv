@@ -5,7 +5,6 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g2d.Batch
-import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
@@ -31,8 +30,10 @@ import com.unciv.ui.components.tilegroups.citybutton.InfluenceTable
 import com.unciv.ui.components.tilegroups.citybutton.StatusTable
 import com.unciv.ui.components.tilegroups.layers.BorderEdgeGeometry
 import com.unciv.ui.components.tilegroups.layers.OwnershipBorderSegmentResolver
+import com.unciv.ui.components.widgets.UnitIconGroup
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.images.ImageGetter
+import com.unciv.ui.screens.worldscreen.worldmap.createMoveHereButtonVisual
 import com.unciv.logic.map.tile.Tile
 import com.unciv.ui.screens.basescreen.BaseScreen
 import yairm210.purity.annotations.Readonly
@@ -115,8 +116,6 @@ class IcosaGlobeActor(
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
     private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
-    private val turnsGlyphLayout = GlyphLayout()
-
     init {
         touchable = Touchable.enabled
         addListener(object : InputListener() {
@@ -504,67 +503,23 @@ class IcosaGlobeActor(
         )
         if (lodAlpha <= 0.05f) return
         val alpha = parentAlpha * lodAlpha
-
-        val circleRegion = getRegion(ImageGetter.circleLocation) ?: return
-        val movementRegion = getRegion("StatIcons/Movement")
-        val badgeCenterX = center.x
-        val badgeCenterY = center.y + detailSize * 0.22f
-        val outerSize = detailSize * 0.42f
-        val innerSize = detailSize * 0.39f
-        val iconSize = detailSize * 0.18f
-
-        drawCenteredRegion(
-            batch = batch,
-            region = circleRegion,
-            centerX = badgeCenterX,
-            centerY = badgeCenterY,
-            width = outerSize,
-            height = outerSize,
-            color = ImageGetter.CHARCOAL,
-            alpha = alpha
-        )
-        drawCenteredRegion(
-            batch = batch,
-            region = circleRegion,
-            centerX = badgeCenterX,
-            centerY = badgeCenterY,
-            width = innerSize,
-            height = innerSize,
-            color = Color.WHITE,
-            alpha = alpha
-        )
-        if (movementRegion != null) {
-            drawCenteredRegion(
-                batch = batch,
-                region = movementRegion,
-                centerX = badgeCenterX,
-                centerY = badgeCenterY + detailSize * 0.07f,
-                width = iconSize,
-                height = iconSize,
-                color = ImageGetter.CHARCOAL,
-                alpha = alpha
-            )
+        val movePreviewWidget = createMoveHereButtonVisual(
+            unitToTurnsToDestination = linkedMapOf(selectedUnit to turnsToDestination),
+            showUnitIcon = true
+        ).apply {
+            touchable = Touchable.disabled
         }
-
-        val font = Fonts.font
-        val oldColor = Color(font.color)
-        val oldScaleX = font.data.scaleX
-        val oldScaleY = font.data.scaleY
-        val textScale = max(0.45f, detailSize / 44f)
-        font.data.setScale(textScale)
-        font.color.set(ImageGetter.CHARCOAL.r, ImageGetter.CHARCOAL.g, ImageGetter.CHARCOAL.b, alpha)
-
-        val turnsText = turnsToDestination.toString()
-        turnsGlyphLayout.setText(font, turnsText)
-        font.draw(
-            batch,
-            turnsText,
-            badgeCenterX - turnsGlyphLayout.width / 2f,
-            badgeCenterY - detailSize * 0.08f
+        val targetSize = detailSize * 0.68f
+        val scale = if (movePreviewWidget.width <= 0f) 1f else targetSize / movePreviewWidget.width
+        movePreviewWidget.setScale(scale)
+        movePreviewWidget.setPosition(
+            center.x - movePreviewWidget.width * scale / 2f,
+            center.y + detailSize * 0.18f - movePreviewWidget.height * scale / 2f
         )
-
-        font.color.set(oldColor)
-        font.data.setScale(oldScaleX, oldScaleY)
+        movePreviewWidget.color.a = alpha
+        batch.setColor(Color.WHITE)
+        movePreviewWidget.draw(batch, 1f)
+        batch.setColor(Color.WHITE)
     }
 
     private fun drawOwnershipBorderSprites(batch: Batch, parentAlpha: Float) {
@@ -863,13 +818,10 @@ class IcosaGlobeActor(
         }
         if (visuals.isEmpty()) return
 
-        val circleRegion = getRegion(ImageGetter.circleLocation) ?: return
         val orderedVisuals = visuals.sortedBy { if (selectedUnit != null && it.unit == selectedUnit) 1 else 0 }
         for (visual in orderedVisuals) {
             val unit = visual.unit
             val markerAlpha = if (viewingCiv != null && unit.civ == viewingCiv && !unit.hasMovement()) alpha * 0.65f else alpha
-            val outer = unit.civ.nation.getOuterColor()
-            val inner = unit.civ.nation.getInnerColor()
             val markerX = center.x
             val markerY = center.y + detailSize * visual.yOffsetFactor
             drawUnitSprite(
@@ -880,16 +832,7 @@ class IcosaGlobeActor(
                 detailSize = detailSize,
                 alpha = markerAlpha
             )
-            drawUnitFlagFallback(
-                batch = batch,
-                unit = unit,
-                centerX = markerX,
-                centerY = markerY,
-                detailSize = detailSize,
-                alpha = markerAlpha,
-                selected = selectedUnit != null && unit == selectedUnit
-            )
-            drawUnitStatusOverlays(
+            drawUnitOverlayWidget(
                 batch = batch,
                 unit = unit,
                 centerX = markerX,
@@ -902,7 +845,7 @@ class IcosaGlobeActor(
         }
     }
 
-    private fun drawUnitStatusOverlays(
+    private fun drawUnitOverlayWidget(
         batch: Batch,
         unit: MapUnit,
         centerX: Float,
@@ -912,69 +855,27 @@ class IcosaGlobeActor(
         selected: Boolean,
         viewingCiv: Civilization?
     ) {
-        if (detailSize < 14f) return
+        if (detailSize < 12f) return
+        val widget = UnitIconGroup(unit, 30f).apply { touchable = Touchable.disabled }
+        if (selected) widget.selectUnit()
 
-        val actionLocation = GlobeUnitStatusOverlayPolicy.actionIconLocation(unit)
-        val actionRegion = getRegion(actionLocation)
-        val circleRegion = getRegion(ImageGetter.circleLocation)
-        val shouldFadeAction =
-            viewingCiv != null
-                && unit.civ == viewingCiv
-                && UncivGame.Current.settings.unitIconOpacity == 1f
-                && ((!selected && !unit.isIdle()) || (selected && unit.isIdle()))
-        val actionAlpha = if (shouldFadeAction) alpha * 0.5f else alpha
+        // Match 2D tile-layer behavior: own out-of-moves units are faded.
+        val localAlpha = if (viewingCiv != null && unit.civ == viewingCiv && !unit.hasMovement()) {
+            alpha * 0.5f
+        } else alpha
+        widget.color.a = localAlpha
 
-        if (actionRegion != null && circleRegion != null) {
-            val actionSize = detailSize * 0.15f
-            val actionCircleSize = detailSize * 0.23f
-            drawCenteredRegion(
-                batch = batch,
-                region = circleRegion,
-                centerX = centerX + detailSize * 0.19f,
-                centerY = centerY - detailSize * 0.18f,
-                width = actionCircleSize + 2f,
-                height = actionCircleSize + 2f,
-                color = ImageGetter.CHARCOAL,
-                alpha = actionAlpha
-            )
-            drawCenteredRegion(
-                batch = batch,
-                region = circleRegion,
-                centerX = centerX + detailSize * 0.19f,
-                centerY = centerY - detailSize * 0.18f,
-                width = actionCircleSize,
-                height = actionCircleSize,
-                color = Color.WHITE,
-                alpha = actionAlpha
-            )
-            drawCenteredRegion(
-                batch = batch,
-                region = actionRegion,
-                centerX = centerX + detailSize * 0.19f,
-                centerY = centerY - detailSize * 0.18f,
-                width = actionSize,
-                height = actionSize,
-                color = Color.WHITE,
-                alpha = actionAlpha
-            )
-        }
+        val targetWidth = detailSize * 0.50f
+        val scale = if (widget.width <= 0f) 1f else targetWidth / widget.width
+        widget.setScale(scale)
+        widget.setPosition(
+            centerX - widget.width * scale / 2f,
+            centerY - widget.height * scale / 2f
+        )
 
-        if (unit.health >= 100) return
-        val whiteDot = getRegion(ImageGetter.whiteDotLocation) ?: return
-        val barWidth = detailSize * 0.45f
-        val barHeight = max(2.2f, detailSize * 0.06f)
-        val barX = centerX - barWidth / 2f
-        val barY = centerY - detailSize * 0.36f
-        val healthPercent = (unit.health / 100f).coerceIn(0f, 1f)
-
-        batch.setColor(0f, 0f, 0f, alpha * 0.82f)
-        batch.draw(whiteDot, barX - 0.8f, barY - 0.8f, barWidth + 1.6f, barHeight + 1.6f)
-
-        batch.setColor(0.72f, 0.1f, 0.1f, alpha * 0.95f)
-        batch.draw(whiteDot, barX, barY, barWidth, barHeight)
-
-        batch.setColor(0.2f, 0.84f, 0.24f, alpha * 0.95f)
-        batch.draw(whiteDot, barX, barY, barWidth * healthPercent, barHeight)
+        batch.setColor(Color.WHITE)
+        widget.draw(batch, 1f)
+        batch.setColor(Color.WHITE)
     }
 
     private fun drawUnitSprite(

@@ -29,6 +29,42 @@ interface OverlayButtonData{
 const val buttonSize = 60f
 const val smallerCircleSizes = 25f
 
+fun createMoveHereButtonVisual(
+    unitToTurnsToDestination: Map<MapUnit, Int>,
+    showUnitIcon: Boolean = true
+): Group {
+    val isParadrop = unitToTurnsToDestination.keys.all { it.isPreparingParadrop() }
+    val image = if (isParadrop)
+        ImageGetter.getUnitActionPortrait("Paradrop", buttonSize / 2)
+    else ImageGetter.getStatIcon("Movement")
+        .apply { color = ImageGetter.CHARCOAL; width = buttonSize / 2; height = buttonSize / 2 }
+    val moveHereButton = image
+        .surroundWithCircle(buttonSize - 2, false)
+        .surroundWithCircle(buttonSize, false, ImageGetter.CHARCOAL)
+
+    if (!isParadrop) {
+        val numberCircle = unitToTurnsToDestination.values.maxOrNull()!!.tr().toLabel(fontSize = 14)
+            .apply { setAlignment(Align.center) }
+            .surroundWithCircle(smallerCircleSizes - 2, color = BaseScreen.skinStrings.skinConfig.baseColor.darken(0.3f))
+            .surroundWithCircle(smallerCircleSizes, false)
+        moveHereButton.addActor(numberCircle)
+    }
+
+    if (showUnitIcon) {
+        val firstUnit = unitToTurnsToDestination.keys.first()
+        val unitIcon = if (unitToTurnsToDestination.size == 1) UnitIconGroup(firstUnit, smallerCircleSizes)
+        else unitToTurnsToDestination.size.tr().toLabel(fontColor = firstUnit.civ.nation.getInnerColor()).apply {
+            setAlignment(Align.center)
+        }.surroundWithCircle(smallerCircleSizes).apply {
+            circle.color = firstUnit.civ.nation.getOuterColor()
+        }
+        unitIcon.y = buttonSize - unitIcon.height
+        moveHereButton.addActor(unitIcon)
+    }
+
+    return moveHereButton
+}
+
 class MoveHereOverlayButtonData(val unitToTurnsToDestination: HashMap<MapUnit, Int>, val tile: Tile) :
     OverlayButtonData {
     override fun createButton(worldMapHolder: WorldMapHolder): Actor {
@@ -36,30 +72,7 @@ class MoveHereOverlayButtonData(val unitToTurnsToDestination: HashMap<MapUnit, I
     }
 
     private fun getMoveHereButton(worldMapHolder: WorldMapHolder): Group {
-        val isParadrop = unitToTurnsToDestination.keys.all { it.isPreparingParadrop() }
-        val image = if (isParadrop)
-            ImageGetter.getUnitActionPortrait("Paradrop", buttonSize / 2)
-        else ImageGetter.getStatIcon("Movement")
-            .apply { color = ImageGetter.CHARCOAL; width = buttonSize / 2; height = buttonSize / 2 }
-        val moveHereButton = image
-            .surroundWithCircle(buttonSize - 2, false)
-            .surroundWithCircle(buttonSize, false, ImageGetter.CHARCOAL)
-
-        if (!isParadrop) {
-            val numberCircle = unitToTurnsToDestination.values.maxOrNull()!!.tr().toLabel(fontSize = 14)
-                .apply { setAlignment(Align.center) }
-                .surroundWithCircle(smallerCircleSizes - 2, color = BaseScreen.skinStrings.skinConfig.baseColor.darken(0.3f))
-                .surroundWithCircle(smallerCircleSizes, false)
-            moveHereButton.addActor(numberCircle)
-        }
-
-        val firstUnit = unitToTurnsToDestination.keys.first()
-        val unitIcon = if (unitToTurnsToDestination.size == 1) UnitIconGroup(firstUnit, smallerCircleSizes)
-        else unitToTurnsToDestination.size.tr().toLabel(fontColor = firstUnit.civ.nation.getInnerColor()).apply { setAlignment(
-            Align.center) }
-            .surroundWithCircle(smallerCircleSizes).apply { circle.color = firstUnit.civ.nation.getOuterColor() }
-        unitIcon.y = buttonSize - unitIcon.height
-        moveHereButton.addActor(unitIcon)
+        val moveHereButton = createMoveHereButtonVisual(unitToTurnsToDestination, showUnitIcon = true)
 
         val unitsThatCanMove = unitToTurnsToDestination.keys.filter { it.hasMovement() }
         if (unitsThatCanMove.isEmpty()) moveHereButton.color.a = 0.5f
