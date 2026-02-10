@@ -1,11 +1,9 @@
 package com.unciv.ui.components.tilegroups.layers
 
 import com.badlogic.gdx.graphics.g2d.Batch
-import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.unciv.logic.civilization.Civilization
-import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.unique.LocalUniqueCache
 import com.unciv.ui.components.tilegroups.TileGroup
@@ -35,51 +33,6 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         }
     }
 
-
-    /** Returns the left shared neighbor of `this` and [neighbor] (relative to the view direction `this`->[neighbor]), or null if there is no such tile. */
-    private fun Tile.getLeftSharedNeighbor(neighbor: Tile): Tile? {
-        return tileMap.getClockPositionNeighborTile(this,(tileMap.getNeighborTileClockPosition(this, neighbor) - 2) % 12)
-    }
-
-    /** Returns the right shared neighbor of `this` and [neighbor] (relative to the view direction `this`->[neighbor]), or null if there is no such tile. */
-    private fun Tile.getRightSharedNeighbor(neighbor: Tile): Tile? {
-        return tileMap.getClockPositionNeighborTile(this,(tileMap.getNeighborTileClockPosition(this, neighbor) + 2) % 12)
-    }
-
-    /** Returns left/right shared neighbors by geometry, robust for icosa seam/nonlocal adjacencies. */
-    private fun Tile.getSharedNeighborsByGeometry(neighbor: Tile): Pair<Tile?, Tile?> {
-        val commonNeighbors = neighbors.filter { candidate ->
-            candidate != neighbor && neighbor.neighbors.any { it == candidate }
-        }.toList()
-        if (commonNeighbors.isEmpty()) return null to null
-        if (commonNeighbors.size == 1) return commonNeighbors[0] to commonNeighbors[0]
-
-        val origin = tileMap.topology.getWorldPosition(this)
-        val target = tileMap.topology.getWorldPosition(neighbor)
-        val dirX = target.x - origin.x
-        val dirY = target.y - origin.y
-
-        var leftNeighbor: Tile? = null
-        var rightNeighbor: Tile? = null
-        var bestLeftCross = -Float.MAX_VALUE
-        var bestRightCross = Float.MAX_VALUE
-        for (candidate in commonNeighbors) {
-            val candidatePos = tileMap.topology.getWorldPosition(candidate)
-            val vx = candidatePos.x - origin.x
-            val vy = candidatePos.y - origin.y
-            val cross = dirX * vy - dirY * vx
-            if (cross > bestLeftCross) {
-                bestLeftCross = cross
-                leftNeighbor = candidate
-            }
-            if (cross < bestRightCross) {
-                bestRightCross = cross
-                rightNeighbor = candidate
-            }
-        }
-        return (leftNeighbor ?: commonNeighbors.first()) to (rightNeighbor ?: commonNeighbors.last())
-    }
-
     private fun updateBorders() {
 
         // This is longer than it could be, because of performance -
@@ -102,35 +55,22 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
         // Setup new borders
         val civOuterColor = tile.getOwner()!!.nation.getOuterColor()
         val civInnerColor = tile.getOwner()!!.nation.getInnerColor()
+        val resolvedSegmentsByNeighbor = OwnershipBorderSegmentResolver.resolve(tile).associateBy { it.neighbor }
         for (neighbor in tile.neighbors) {
             var shouldRemoveBorderSegment = false
             var shouldAddBorderSegment = false
 
-            var borderSegmentShouldBeLeftConcave = false
-            var borderSegmentShouldBeRightConcave = false
-
-            val neighborOwner = neighbor.getOwner()
-            if (neighborOwner == tileOwner && borderSegments.containsKey(neighbor)) { // the neighbor used to not belong to us, but now it's ours
+            val resolvedSegment = resolvedSegmentsByNeighbor[neighbor]
+            if (resolvedSegment == null && borderSegments.containsKey(neighbor)) { // the neighbor used to not belong to us, but now it's ours
                 shouldRemoveBorderSegment = true
             }
-            else if (neighborOwner != tileOwner) {
-                val (leftSharedNeighbor, rightSharedNeighbor) =
-                    if (tile.tileMap.mapParameters.shape == MapShape.icosahedron)
-                        tile.getSharedNeighborsByGeometry(neighbor)
-                    else
-                        tile.getLeftSharedNeighbor(neighbor) to tile.getRightSharedNeighbor(neighbor)
-
-                // If a shared neighbor doesn't exist (because it's past a map edge), we act as if it's our tile for border concave/convex-ity purposes.
-                // This is because we do not draw borders against non-existing tiles either.
-                borderSegmentShouldBeLeftConcave = leftSharedNeighbor == null || leftSharedNeighbor.getOwner() == tileOwner
-                borderSegmentShouldBeRightConcave = rightSharedNeighbor == null || rightSharedNeighbor.getOwner() == tileOwner
-
+            else if (resolvedSegment != null) {
                 if (!borderSegments.containsKey(neighbor)) { // there should be a border here but there isn't
                     shouldAddBorderSegment = true
                 }
                 else if (
-                        borderSegmentShouldBeLeftConcave != borderSegments[neighbor]!!.isLeftConcave ||
-                        borderSegmentShouldBeRightConcave != borderSegments[neighbor]!!.isRightConcave
+                        resolvedSegment.isLeftConcave != borderSegments[neighbor]!!.isLeftConcave ||
+                        resolvedSegment.isRightConcave != borderSegments[neighbor]!!.isRightConcave
                 ) { // the concave/convex-ity of the border here is wrong
                     shouldRemoveBorderSegment = true
                     shouldAddBorderSegment = true
@@ -143,36 +83,19 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
                 borderSegments.remove(neighbor)
             }
             if (shouldAddBorderSegment) {
+                val segmentInfo = resolvedSegment ?: continue
                 val images = mutableListOf<Image>()
                 val borderSegment = BorderSegment(
                     images,
-                    borderSegmentShouldBeLeftConcave,
-                    borderSegmentShouldBeRightConcave
+                    segmentInfo.isLeftConcave,
+                    segmentInfo.isRightConcave
                 )
                 borderSegments[neighbor] = borderSegment
 
-                val borderShapeString = when {
-                    borderSegment.isLeftConcave && borderSegment.isRightConcave -> "Concave"
-                    !borderSegment.isLeftConcave && !borderSegment.isRightConcave -> "Convex"
-                    !borderSegment.isLeftConcave && borderSegment.isRightConcave -> "ConvexConcave"
-                    borderSegment.isLeftConcave && !borderSegment.isRightConcave -> "ConcaveConvex"
-                    else -> error("This shouldn't happen?")
-                }
-
-                val relativeWorldPosition = if (tile.tileMap.mapParameters.shape == MapShape.icosahedron) {
-                    // Border sprite orientation follows legacy clock vectors, which point
-                    // from neighbor back to this tile for border-angle purposes.
-                    // Keep that convention for icosa to avoid mirrored/opposite edges.
-                    val fromPos = tile.tileMap.topology.getWorldPosition(tile)
-                    val toPos = tile.tileMap.topology.getWorldPosition(neighbor)
-                    BorderEdgeGeometry.mainMapIcosaAngleDirection(fromPos, toPos)
-                } else {
-                    tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
-                }
-                val angle = BorderEdgeGeometry.borderAngleDegrees(relativeWorldPosition)
+                val angle = BorderEdgeGeometry.borderAngleDegrees(segmentInfo.angleDirection)
 
                 val innerBorderImage = ImageGetter.getImage(
-                    strings.orFallback { getBorder(borderShapeString,"Inner") }
+                    strings.orFallback { getBorder(segmentInfo.borderShapeString,"Inner") }
                 ).setHexagonSize()
 
                 addActor(innerBorderImage)
@@ -181,7 +104,7 @@ class TileLayerBorders(tileGroup: TileGroup, size: Float) : TileLayer(tileGroup,
                 innerBorderImage.color = civOuterColor
 
                 val outerBorderImage = ImageGetter.getImage(
-                    strings.orFallback { getBorder(borderShapeString, "Outer") }
+                    strings.orFallback { getBorder(segmentInfo.borderShapeString, "Outer") }
                 ).setHexagonSize()
 
                 addActor(outerBorderImage)

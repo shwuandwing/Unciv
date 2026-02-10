@@ -88,6 +88,8 @@ Important details for parity with 2D:
 - Directional overlays use `0` texel UV inset to avoid trimming border pixels needed for coast/river contact.
 - UV V-axis mapping for unflipped atlas regions is inverted for Y-up polygon mapping, otherwise bottom river textures appear on opposite edges.
 - Ownership border strips are rendered in two passes (nation outer color + nation inner color) to mirror 2D civ border semantics.
+- In 3D `Batch` passes, use `batch.setColor(...)` (not direct `batch.color` mutation) and reset color around Scene2D widget draws.
+  Direct `batch.color` mutation can leak packed tint state across draws and incorrectly recolor ownership borders.
 
 ### Sprite marker overlays
 

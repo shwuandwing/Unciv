@@ -29,6 +29,7 @@ import com.unciv.ui.components.tilegroups.citybutton.DefenceTable
 import com.unciv.ui.components.tilegroups.citybutton.InfluenceTable
 import com.unciv.ui.components.tilegroups.citybutton.StatusTable
 import com.unciv.ui.components.tilegroups.layers.BorderEdgeGeometry
+import com.unciv.ui.components.tilegroups.layers.OwnershipBorderSegmentResolver
 import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
 import com.unciv.ui.screens.basescreen.BaseScreen
@@ -178,6 +179,7 @@ class IcosaGlobeActor(
         projectTiles()
         val selectedUnit = selectedUnitProvider()
         val selectedCity = selectedCityProvider()
+        val stageBatchColor = Color(batch.color)
 
         batch.end()
 
@@ -194,6 +196,7 @@ class IcosaGlobeActor(
         drawPolygonTileOverlays(parentAlpha)
 
         batch.begin()
+        batch.setColor(Color.WHITE)
         drawRoadOverlaySprites(batch, parentAlpha)
         drawOwnershipBorderSprites(batch, parentAlpha)
         drawSpriteMarkers(
@@ -203,9 +206,11 @@ class IcosaGlobeActor(
             selectedCity = selectedCity
         )
         drawCityBanners(batch, parentAlpha, selectedCity)
+        batch.setColor(stageBatchColor)
         batch.end()
 
         batch.begin()
+        batch.setColor(stageBatchColor)
     }
 
     private fun projectTiles() {
@@ -431,77 +436,91 @@ class IcosaGlobeActor(
     }
 
     private fun drawOwnershipBorderSprites(batch: Batch, parentAlpha: Float) {
-        val whiteDot = getRegion(ImageGetter.whiteDotLocation) ?: return
         val previousColor = Color(batch.color)
-
         for (index in drawOrder) {
             if (!projectedTileExplored[index]) continue
             val tile = tileMap.tileList[index]
             val owner = tile.getOwner() ?: continue
+            val polygon = projectedPolygons[index] ?: continue
+            val center = projectedCenters[index]
+            val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
+            if (alphaScale <= 0.01f) continue
+
             val borderStyle = GlobeBorderStylePolicy.resolvePassColors(
                 civOuterColor = owner.nation.getOuterColor(),
                 civInnerColor = owner.nation.getInnerColor()
             )
-            val polygon = projectedPolygons[index] ?: continue
-            val alphaScale = GlobeOverlayLodPolicy.gridLineAlphaScale(projectedFacing[index])
-            if (alphaScale <= 0.01f) continue
-            val vertexCount = polygon.size / 2
-            val ring = cache.neighborRings[index]
-
-            for (neighborRingIndex in ring.indices) {
-                val neighborIndex = ring[neighborRingIndex]
+            val regularRotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
+            val directionalBaseRotation = projectedDirectionalOverlayRotations[index]
+            val baseFrame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, regularRotation)
+            val segments = OwnershipBorderSegmentResolver.resolve(tile)
+            if (segments.isEmpty()) continue
+            for (segment in segments) {
+                val neighborIndex = segment.neighbor.zeroBasedIndex
                 if (!projectedVisible[neighborIndex]) continue
-                val neighborOwner = tileMap.tileList[neighborIndex].getOwner()
-                if (neighborOwner == owner) continue
 
-                val startCorner = (neighborRingIndex - 1 + vertexCount) % vertexCount
-                val endCorner = neighborRingIndex
-                val startX = polygon[startCorner * 2]
-                val startY = polygon[startCorner * 2 + 1]
-                val endX = polygon[endCorner * 2]
-                val endY = polygon[endCorner * 2 + 1]
-                val dx = endX - startX
-                val dy = endY - startY
-                val length = hypot(dx, dy)
-                if (length <= 0.001f) continue
-                val thickness = max(0.95f, min(2.8f, length * 0.11f))
-                val angle = (atan2(dy, dx) * 180f / Math.PI).toFloat()
-                val outerThickness = thickness * 1.3f
-                val innerThickness = thickness * 0.72f
-                batch.color.set(
-                    borderStyle.outerPass.r,
-                    borderStyle.outerPass.g,
-                    borderStyle.outerPass.b,
-                    parentAlpha * alphaScale * 0.92f
+                val segmentRotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(
+                    directionalBaseRotation + BorderEdgeGeometry.borderAngleDegrees(segment.angleDirection)
                 )
-                drawRotatedRegion(
-                    batch = batch,
-                    region = whiteDot,
-                    x = startX,
-                    y = startY - outerThickness / 2f,
-                    width = length,
-                    height = outerThickness,
-                    rotation = angle
+                val innerRegion = getRegion(
+                    tileSetStrings.orFallback { getBorder(segment.borderShapeString, "Inner") }
+                ) ?: continue
+                val innerPlacement = GlobeBorderStripPlacementPolicy.resolve(
+                    frame = baseFrame,
+                    regionWidth = innerRegion.regionWidth,
+                    regionHeight = innerRegion.regionHeight,
+                    rotationDegrees = segmentRotation
                 )
-                batch.color.set(
+                batch.setColor(
                     borderStyle.innerPass.r,
                     borderStyle.innerPass.g,
                     borderStyle.innerPass.b,
-                    parentAlpha * alphaScale * 0.98f
+                    parentAlpha * alphaScale
                 )
-                drawRotatedRegion(
-                    batch = batch,
-                    region = whiteDot,
-                    x = startX,
-                    y = startY - innerThickness / 2f,
-                    width = length,
-                    height = innerThickness,
-                    rotation = angle
+                batch.draw(
+                    innerRegion,
+                    innerPlacement.x,
+                    innerPlacement.y,
+                    innerPlacement.originX,
+                    innerPlacement.originY,
+                    innerPlacement.width,
+                    innerPlacement.height,
+                    1f,
+                    1f,
+                    innerPlacement.rotation
+                )
+
+                // Match 2D ordering: civ-colored Inner first, then white Outer on top.
+                val outerRegion = getRegion(
+                    tileSetStrings.orFallback { getBorder(segment.borderShapeString, "Outer") }
+                ) ?: continue
+                val outerPlacement = GlobeBorderStripPlacementPolicy.resolve(
+                    frame = baseFrame,
+                    regionWidth = outerRegion.regionWidth,
+                    regionHeight = outerRegion.regionHeight,
+                    rotationDegrees = segmentRotation
+                )
+                batch.setColor(
+                    borderStyle.outerPass.r,
+                    borderStyle.outerPass.g,
+                    borderStyle.outerPass.b,
+                    parentAlpha * alphaScale
+                )
+                batch.draw(
+                    outerRegion,
+                    outerPlacement.x,
+                    outerPlacement.y,
+                    outerPlacement.originX,
+                    outerPlacement.originY,
+                    outerPlacement.width,
+                    outerPlacement.height,
+                    1f,
+                    1f,
+                    outerPlacement.rotation
                 )
             }
         }
-
-        batch.color = previousColor
+        batch.setColor(previousColor)
     }
 
     private fun drawSpriteMarkers(
@@ -557,7 +576,7 @@ class IcosaGlobeActor(
             )
         }
 
-        batch.color = previousColor
+        batch.setColor(previousColor)
     }
 
     private fun drawYieldMarkers(
@@ -782,13 +801,13 @@ class IcosaGlobeActor(
         val barY = centerY - detailSize * 0.36f
         val healthPercent = (unit.health / 100f).coerceIn(0f, 1f)
 
-        batch.color.set(0f, 0f, 0f, alpha * 0.82f)
+        batch.setColor(0f, 0f, 0f, alpha * 0.82f)
         batch.draw(whiteDot, barX - 0.8f, barY - 0.8f, barWidth + 1.6f, barHeight + 1.6f)
 
-        batch.color.set(0.72f, 0.1f, 0.1f, alpha * 0.95f)
+        batch.setColor(0.72f, 0.1f, 0.1f, alpha * 0.95f)
         batch.draw(whiteDot, barX, barY, barWidth, barHeight)
 
-        batch.color.set(0.2f, 0.84f, 0.24f, alpha * 0.95f)
+        batch.setColor(0.2f, 0.84f, 0.24f, alpha * 0.95f)
         batch.draw(whiteDot, barX, barY, barWidth * healthPercent, barHeight)
     }
 
@@ -951,11 +970,13 @@ class IcosaGlobeActor(
                 center.y + detailSize * 0.25f
             )
             widget.root.color.a = alpha
+            batch.setColor(Color.WHITE)
             widget.root.draw(batch, 1f)
+            batch.setColor(Color.WHITE)
             drawCityHealthBarWidget(batch, city, widget, alpha)
         }
 
-        batch.color = previousColor
+        batch.setColor(previousColor)
     }
 
     private fun buildCityBannerWidget(
@@ -1014,7 +1035,7 @@ class IcosaGlobeActor(
         color: Color,
         alpha: Float
     ) {
-        batch.color.set(color.r, color.g, color.b, color.a * alpha)
+        batch.setColor(color.r, color.g, color.b, color.a * alpha)
         batch.draw(
             region,
             centerX - width / 2f,
@@ -1121,7 +1142,7 @@ class IcosaGlobeActor(
 
     private fun drawRoadOverlaySprites(batch: Batch, parentAlpha: Float) {
         val previousColor = Color(batch.color)
-        batch.color = Color.WHITE.cpy().apply { a = parentAlpha }
+        batch.setColor(1f, 1f, 1f, parentAlpha)
         for (index in drawOrder) {
             val polygon = projectedPolygons[index] ?: continue
             val center = projectedCenters[index]
@@ -1133,10 +1154,10 @@ class IcosaGlobeActor(
                 facingDotCamera = projectedFacing[index]
             )
             if (lodAlpha <= 0.01f) continue
-            batch.color.a = parentAlpha * lodAlpha
+            batch.setColor(1f, 1f, 1f, parentAlpha * lodAlpha)
             drawRoadOverlays(batch, index, center, min(frame.width, frame.height))
         }
-        batch.color = previousColor
+        batch.setColor(previousColor)
     }
 
     private fun drawRoadOverlays(batch: Batch, index: Int, center: Vector2, detailSize: Float) {
@@ -1257,7 +1278,8 @@ class IcosaGlobeActor(
         frameHeight: Float,
         tile: Tile,
         rotation: Float,
-        parentAlpha: Float
+        parentAlpha: Float,
+        tintColor: Color = Color.WHITE
     ) {
         val location = chooseVariant(overlay.location, tile) ?: return
         val region = ImageGetter.getDrawable(location).region
@@ -1265,12 +1287,17 @@ class IcosaGlobeActor(
         val triangles = overlayTrianglesByVertexCount.getOrPut(vertexCount) {
             GlobeOverlayPolygonMapping.triangleFan(vertexCount)
         }
-        val packedColor = Color.toFloatBits(1f, 1f, 1f, parentAlpha * overlay.alpha)
+        val packedColor = Color.toFloatBits(
+            tintColor.r,
+            tintColor.g,
+            tintColor.b,
+            parentAlpha * overlay.alpha
+        )
 
         val texture = region.texture
         // Atlas tiles have anti-aliased transparent edges; inset only where needed.
         // Directional overlays (rivers/edge strips) must keep border texels so they reach tile edges.
-        val insetTexels = GlobeOverlaySpritePolicy.textureInsetTexels(overlay)
+        val insetTexels = overlay.textureInsetTexelsOverride ?: GlobeOverlaySpritePolicy.textureInsetTexels(overlay)
         val uInset = insetTexels / texture.width.toFloat()
         val vInset = insetTexels / texture.height.toFloat()
         val uWindow = GlobeOverlaySpritePolicy.horizontalUvWindow(region.u, region.u2, uInset)
