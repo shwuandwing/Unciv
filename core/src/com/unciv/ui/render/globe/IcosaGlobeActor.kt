@@ -723,19 +723,22 @@ class IcosaGlobeActor(
     ) {
         val resourceName = tile.resource ?: return
         if (viewingCiv != null && !viewingCiv.canSeeResource(tile.tileResource)) return
-        val iconLocation = GlobeSpriteOverlayResolver.resourceIconLocation(resourceName) ?: return
-        val iconRegion = getRegion(iconLocation) ?: return
-        val circleRegion = getRegion("ResourceIcons/Circle") ?: getRegion(ImageGetter.circleLocation)
-        val bgSize = detailSize * 0.36f
-        val iconSize = detailSize * 0.22f
         val x = center.x - detailSize * 0.25f
         val y = center.y + detailSize * 0.20f
-        val bgColor = tile.tileResource?.resourceType?.getColor() ?: Color(0.14f, 0.14f, 0.14f, 1f)
-
-        if (circleRegion != null) {
-            drawCenteredRegion(batch, circleRegion, x, y, bgSize, bgSize, bgColor, alpha)
-        }
-        drawCenteredRegion(batch, iconRegion, x, y, iconSize, iconSize, ImageGetter.CHARCOAL, alpha)
+        val portraitSize = detailSize * 0.30f
+        val resourcePortrait = ImageGetter.getResourcePortrait(
+            resourceName = resourceName,
+            size = portraitSize,
+            amount = tile.resourceAmount
+        ).apply { touchable = Touchable.disabled }
+        resourcePortrait.setPosition(
+            x - resourcePortrait.width / 2f,
+            y - resourcePortrait.height / 2f
+        )
+        resourcePortrait.color.a = alpha
+        batch.setColor(Color.WHITE)
+        resourcePortrait.draw(batch, 1f)
+        batch.setColor(Color.WHITE)
     }
 
     private fun drawImprovementMarker(
