@@ -38,6 +38,7 @@ import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.images.ImageWithCustomSize
 import com.unciv.ui.popups.ConfirmPopup
 import com.unciv.ui.popups.ToastPopup
+import com.unciv.ui.render.globe.GlobeCameraController
 import com.unciv.ui.render.globe.IcosaGlobeActor
 import com.unciv.ui.render.globe.IcosaRenderMode
 import com.unciv.ui.render.globe.IcosaRenderModePolicy
@@ -106,6 +107,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         overColor = Color.GOLD
     )
     private var globeActor: IcosaGlobeActor? = null
+    private var globeViewState: GlobeCameraController.ViewState? = null
     private var requestedRenderMode = IcosaRenderMode.TwoD
     var tileClickHandler: ((tile: Tile)->Unit)? = null
     private var zoomController: ZoomButtonPair? = null
@@ -380,8 +382,10 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
     }
 
     private fun rebuildGlobeActor() {
-        globeActor?.remove()
-        globeActor?.dispose()
+        val previousActor = globeActor
+        globeViewState = previousActor?.getCameraViewState() ?: globeViewState
+        previousActor?.remove()
+        previousActor?.dispose()
         globeActor = null
         if (tileMap.mapParameters.shape != MapShape.icosahedron) return
 
@@ -390,6 +394,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
             onTileClick = { tile -> tileClickHandler?.invoke(tile) }
         )
         actor.setSize(stage.width, stage.height)
+        globeViewState?.let { actor.setCameraViewState(it) }
         stage.root.addActorAt(0, actor)
         globeActor = actor
     }
