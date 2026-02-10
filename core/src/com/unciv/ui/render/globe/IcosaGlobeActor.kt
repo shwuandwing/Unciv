@@ -591,22 +591,28 @@ class IcosaGlobeActor(
         val yieldIcons = GlobeYieldOverlayPolicy.resolve(tile.stats.getTileStats(viewingCiv), maxIcons = 3)
         if (yieldIcons.isEmpty()) return
         val iconSize = detailSize * 0.15f
-        val spacing = detailSize * 0.17f
+        val groupSpacing = detailSize * 0.19f
+        val clusterSpacing = detailSize * 0.11f
         val baseY = center.y - detailSize * 0.30f
-        val startX = center.x - spacing * (yieldIcons.size - 1) / 2f
+        val startX = center.x - groupSpacing * (yieldIcons.size - 1) / 2f
 
-        for ((index, icon) in yieldIcons.withIndex()) {
+        for ((groupIndex, icon) in yieldIcons.withIndex()) {
             val region = getRegion(icon.iconLocation) ?: continue
-            drawCenteredRegion(
-                batch = batch,
-                region = region,
-                centerX = startX + index * spacing,
-                centerY = baseY,
-                width = iconSize,
-                height = iconSize,
-                color = Color.WHITE,
-                alpha = alpha
-            )
+            val groupX = startX + groupIndex * groupSpacing
+            val offsets = GlobeYieldOverlayPolicy.markerOffsets(icon.value)
+            val localIconScale = if (offsets.size >= 3) 0.9f else 1f
+            for (offset in offsets) {
+                drawCenteredRegion(
+                    batch = batch,
+                    region = region,
+                    centerX = groupX + offset.x * clusterSpacing,
+                    centerY = baseY + offset.y * clusterSpacing,
+                    width = iconSize * localIconScale,
+                    height = iconSize * localIconScale,
+                    color = Color.WHITE,
+                    alpha = alpha
+                )
+            }
         }
     }
 

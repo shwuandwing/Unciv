@@ -45,4 +45,24 @@ class GlobeYieldOverlayPolicyTests {
         val icons = GlobeYieldOverlayPolicy.resolve(stats, maxIcons = 1)
         assertEquals("StatIcons/Food", icons.single().iconLocation)
     }
+
+    @Test
+    fun `markerOffsets returns 2-icon vertical pair for value 2`() {
+        val offsets = GlobeYieldOverlayPolicy.markerOffsets(2)
+        assertEquals(2, offsets.size)
+        assertEquals(0f, offsets[0].x, 0.0001f)
+        assertEquals(0.5f, offsets[0].y, 0.0001f)
+        assertEquals(0f, offsets[1].x, 0.0001f)
+        assertEquals(-0.5f, offsets[1].y, 0.0001f)
+    }
+
+    @Test
+    fun `markerOffsets clamps values above 4 to 2x2 pattern`() {
+        val offsets = GlobeYieldOverlayPolicy.markerOffsets(9)
+        assertEquals(4, offsets.size)
+        assertEquals(-0.5f, offsets[0].x, 0.0001f)
+        assertEquals(0.5f, offsets[0].y, 0.0001f)
+        assertEquals(0.5f, offsets[1].x, 0.0001f)
+        assertEquals(0.5f, offsets[1].y, 0.0001f)
+    }
 }
