@@ -3,6 +3,7 @@ package com.unciv.ui.render.globe
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector3
+import yairm210.purity.annotations.Readonly
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -18,6 +19,12 @@ class GlobeCameraController(
     private val defaultYawDegrees = yawDegrees
     private val defaultPitchDegrees = pitchDegrees
     private val defaultDistance = distance
+
+    data class ViewState(
+        val yawDegrees: Float,
+        val pitchDegrees: Float,
+        val distance: Float
+    )
 
     fun rotateBy(deltaX: Float, deltaY: Float) {
         yawDegrees -= deltaX * rotationSensitivity
@@ -50,5 +57,18 @@ class GlobeCameraController(
         yawDegrees = defaultYawDegrees
         pitchDegrees = defaultPitchDegrees
         distance = defaultDistance
+    }
+
+    @Readonly
+    fun snapshot(): ViewState = ViewState(
+        yawDegrees = yawDegrees,
+        pitchDegrees = pitchDegrees,
+        distance = distance
+    )
+
+    fun restore(state: ViewState) {
+        yawDegrees = state.yawDegrees
+        pitchDegrees = state.pitchDegrees.coerceIn(-85f, 85f)
+        distance = state.distance.coerceIn(minDistance, maxDistance)
     }
 }

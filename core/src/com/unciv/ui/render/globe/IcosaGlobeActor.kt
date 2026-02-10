@@ -33,6 +33,7 @@ import com.unciv.ui.components.tilegroups.layers.OwnershipBorderSegmentResolver
 import com.unciv.ui.images.ImageGetter
 import com.unciv.logic.map.tile.Tile
 import com.unciv.ui.screens.basescreen.BaseScreen
+import yairm210.purity.annotations.Readonly
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
@@ -187,6 +188,13 @@ class IcosaGlobeActor(
 
     fun resetToNorth() {
         cameraController.resetToNorth()
+    }
+
+    @Readonly
+    fun getCameraViewState(): GlobeCameraController.ViewState = cameraController.snapshot()
+
+    fun setCameraViewState(state: GlobeCameraController.ViewState) {
+        cameraController.restore(state)
     }
 
     override fun draw(batch: Batch, parentAlpha: Float) {

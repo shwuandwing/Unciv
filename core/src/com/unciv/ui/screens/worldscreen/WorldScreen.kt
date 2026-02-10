@@ -38,6 +38,7 @@ import com.unciv.ui.popups.AuthPopup
 import com.unciv.ui.popups.Popup
 import com.unciv.ui.popups.ToastPopup
 import com.unciv.ui.popups.hasOpenPopups
+import com.unciv.ui.render.globe.GlobeCameraController
 import com.unciv.ui.render.globe.IcosaGlobeActor
 import com.unciv.ui.render.globe.IcosaRenderMode
 import com.unciv.ui.render.globe.IcosaRenderModePolicy
@@ -145,6 +146,7 @@ class WorldScreen(
     private val map3DButton = "3D".toTextButton()
     private var requestedRenderMode = IcosaRenderMode.TwoD
     private var globeActor: IcosaGlobeActor? = null
+    private var globeViewState: GlobeCameraController.ViewState? = null
 
     private var nextTurnUpdateJob: Job? = null
 
@@ -372,8 +374,10 @@ class WorldScreen(
     }
 
     private fun rebuildGlobeActor() {
-        globeActor?.remove()
-        globeActor?.dispose()
+        val previousActor = globeActor
+        globeViewState = previousActor?.getCameraViewState() ?: globeViewState
+        previousActor?.remove()
+        previousActor?.dispose()
         globeActor = null
         if (gameInfo.tileMap.mapParameters.shape != com.unciv.logic.map.MapShape.icosahedron) return
 
@@ -392,6 +396,7 @@ class WorldScreen(
             onCityBannerClick = { city -> onGlobeCityBannerClicked(city) }
         )
         actor.setSize(stage.width, stage.height)
+        globeViewState?.let { actor.setCameraViewState(it) }
         stage.root.addActorAt(0, actor)
         globeActor = actor
     }
@@ -757,7 +762,8 @@ class WorldScreen(
         val selectedCivName: String,
         val viewingCivName: String,
         val fogOfWar: Boolean,
-        val requestedRenderMode: IcosaRenderMode
+        val requestedRenderMode: IcosaRenderMode,
+        val globeViewState: GlobeCameraController.ViewState?
     ) {
         val zoom = mapHolder.scaleX
         val scrollX = mapHolder.scrollX
@@ -766,7 +772,14 @@ class WorldScreen(
     
     @Readonly
     fun getRestoreState(): RestoreState {
-        return RestoreState(mapHolder, selectedCiv.civID, viewingCiv.civID, fogOfWar, requestedRenderMode)
+        return RestoreState(
+            mapHolder = mapHolder,
+            selectedCivName = selectedCiv.civID,
+            viewingCivName = viewingCiv.civID,
+            fogOfWar = fogOfWar,
+            requestedRenderMode = requestedRenderMode,
+            globeViewState = globeActor?.getCameraViewState() ?: globeViewState
+        )
     }
 
     private fun restore(restoreState: RestoreState) {
@@ -782,7 +795,9 @@ class WorldScreen(
         selectedCiv = gameInfo.getCivilization(restoreState.selectedCivName)
         fogOfWar = restoreState.fogOfWar
         requestedRenderMode = restoreState.requestedRenderMode
+        globeViewState = restoreState.globeViewState
         refreshRenderModeState()
+        globeViewState?.let { globeActor?.setCameraViewState(it) }
     }
 
     fun nextTurn() {
