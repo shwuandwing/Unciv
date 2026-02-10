@@ -70,9 +70,11 @@ import com.unciv.ui.screens.worldscreen.topbar.WorldScreenTopBar
 import com.unciv.ui.screens.worldscreen.unit.AutoPlay
 import com.unciv.ui.screens.worldscreen.unit.UnitTable
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsTable
+import com.unciv.ui.screens.worldscreen.worldmap.GlobeCityBannerClickPolicy
 import com.unciv.ui.screens.worldscreen.worldmap.WorldMapHolder
 import com.unciv.ui.screens.worldscreen.worldmap.WorldMapTileUpdater.updateTiles
 import com.unciv.utils.Concurrency
+import com.unciv.utils.DebugUtils
 import com.unciv.utils.debug
 import com.unciv.utils.launchOnGLThread
 import com.unciv.utils.launchOnThreadPool
@@ -385,8 +387,10 @@ class WorldScreen(
             },
             selectedUnitProvider = { bottomUnitTable.selectedUnit },
             selectedCityProvider = { bottomUnitTable.selectedCity },
-            selectedCivProvider = { selectedCiv }
-        ) { tile -> onGlobeTileClicked(tile) }
+            selectedCivProvider = { selectedCiv },
+            onTileClick = { tile -> onGlobeTileClicked(tile) },
+            onCityBannerClick = { city -> onGlobeCityBannerClicked(city) }
+        )
         actor.setSize(stage.width, stage.height)
         stage.root.addActorAt(0, actor)
         globeActor = actor
@@ -402,6 +406,28 @@ class WorldScreen(
             return
         }
         mapHolder.onGlobeTileClicked(tile)
+    }
+
+    private fun onGlobeCityBannerClicked(city: com.unciv.logic.city.City) {
+        val cityCenterTile = city.getCenterTile()
+        val selectedUnit = bottomUnitTable.selectedUnit
+        val selectedCity = bottomUnitTable.selectedCity
+        val action = GlobeCityBannerClickPolicy.resolve(
+            GlobeCityBannerClickPolicy.Context(
+                selectedCityMatchesClickedCity = selectedCity == city,
+                isReadOnlyRenderMode = isReadOnlyRenderMode(),
+                isViewingOwnCity = cityCenterTile.getOwner() == viewingCiv,
+                viewingCivIsSpectator = viewingCiv.isSpectator(),
+                debugVisibleMap = DebugUtils.VISIBLE_MAP,
+                selectedUnitIsAirUnitInClickedCity = selectedUnit != null && cityCenterTile.airUnits.contains(selectedUnit)
+            )
+        )
+        if (action == GlobeCityBannerClickPolicy.Action.OpenCity) {
+            game.pushScreen(CityScreen(city))
+            return
+        }
+
+        mapHolder.onGlobeTileClicked(cityCenterTile)
     }
 
     private fun applyRenderModeTogglePosition() {
