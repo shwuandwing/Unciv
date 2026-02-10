@@ -6,7 +6,8 @@ object GlobeCenterOverlayPolicy {
         val scale: Float = 1f,
         val alpha: Float = 1f,
         val isBaseTerrain: Boolean = false,
-        val isDirectional: Boolean = false
+        val isDirectional: Boolean = false,
+        val textureInsetTexelsOverride: Float? = null
     )
 
     fun classify(
