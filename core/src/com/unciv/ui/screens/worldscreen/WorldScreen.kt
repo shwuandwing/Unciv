@@ -462,16 +462,17 @@ class WorldScreen(
         val margin = 10f
         val spacing = 8f
         val resetVisible = resetNorthButton.isVisible
-        val controlsWidth = renderModeToggle.width + if (resetVisible) spacing + resetNorthButton.width else 0f
 
-        val baseX = zoomController.x - spacing - controlsWidth
+        // Keep the 2D/3D toggle anchored in place regardless of reset-button visibility.
+        val baseX = zoomController.x - spacing - renderModeToggle.width
         val baseY = zoomController.y
-        val maxX = stage.width - margin - controlsWidth
+        val maxX = stage.width - margin - renderModeToggle.width
         val clampedX = if (maxX >= margin) baseX.coerceIn(margin, maxX) else margin
 
         renderModeToggle.setPosition(clampedX, baseY, Align.bottomLeft)
         if (resetVisible) {
-            resetNorthButton.setPosition(clampedX + renderModeToggle.width + spacing, baseY, Align.bottomLeft)
+            val resetX = (clampedX - spacing - resetNorthButton.width).coerceAtLeast(margin)
+            resetNorthButton.setPosition(resetX, baseY, Align.bottomLeft)
         }
     }
 
