@@ -1,5 +1,6 @@
 package com.unciv.ui.render.globe
 
+import com.badlogic.gdx.math.Vector3
 import org.junit.Assert
 import org.junit.Test
 
@@ -68,5 +69,23 @@ class GlobeCameraControllerTests {
         Assert.assertEquals(123f, controller.yawDegrees, 0.0001f)
         Assert.assertEquals(85f, controller.pitchDegrees, 0.0001f)
         Assert.assertEquals(5f, controller.distance, 0.0001f)
+    }
+
+    @Test
+    fun centerOnDirectionAlignsYawAndPitchToTargetVector() {
+        val controller = GlobeCameraController(
+            yawDegrees = 0f,
+            pitchDegrees = 0f,
+            distance = 4f,
+            minDistance = 2f,
+            maxDistance = 5f
+        )
+
+        controller.centerOnDirection(Vector3(0f, 0f, 1f))
+        Assert.assertEquals(90f, controller.yawDegrees, 0.0001f)
+        Assert.assertEquals(0f, controller.pitchDegrees, 0.0001f)
+
+        controller.centerOnDirection(Vector3(0f, 1f, 0f))
+        Assert.assertEquals(85f, controller.pitchDegrees, 0.0001f)
     }
 }

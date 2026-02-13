@@ -155,6 +155,19 @@ class EditorMapHolder(
         addAction(blinkAction) // Don't set it on the group because it's an actionless group
     }
 
+    fun getViewportCenterTile(): Tile? {
+        if (allTileGroups.isEmpty()) return null
+        val viewportCenterX = scrollX
+        val viewportCenterY = maxY - scrollY
+        return allTileGroups.minByOrNull { tileGroup ->
+            val centerX = tileGroup.x + tileGroup.width / 2f
+            val centerY = tileGroup.y + tileGroup.width / 2f
+            val dx = centerX - viewportCenterX
+            val dy = centerY - viewportCenterY
+            dx * dx + dy * dy
+        }?.tile
+    }
+
     /*
     The ScrollPane interferes with the dragging listener of MapEditorToolsDrawer.
     Once the ZoomableScrollPane super is initialized, there are 3 listeners + 1 capture listener:

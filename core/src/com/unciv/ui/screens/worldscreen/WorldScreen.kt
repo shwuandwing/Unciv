@@ -88,7 +88,6 @@ import kotlinx.coroutines.coroutineScope
 import yairm210.purity.annotations.Readonly
 import java.util.Timer
 import kotlin.concurrent.timer
-import kotlin.math.max
 
 /**
  * Do not create this screen without seriously thinking about the implications: this is the single most memory-intensive class in the application.
@@ -159,6 +158,7 @@ class WorldScreen(
     private var requestedRenderMode = IcosaRenderMode.TwoD
     private var globeActor: IcosaGlobeActor? = null
     private var globeViewState: GlobeCameraController.ViewState? = null
+    private var wasUsingGlobeRenderMode = false
 
     private var nextTurnUpdateJob: Job? = null
 
@@ -459,53 +459,19 @@ class WorldScreen(
     }
 
     private fun applyRenderModeTogglePosition() {
-        val margin = 14f
+        val margin = 10f
         val spacing = 8f
-        val toggleWidth = renderModeToggle.width
-        val toggleHeight = renderModeToggle.height
         val resetVisible = resetNorthButton.isVisible
-        val resetWidth = if (resetVisible) resetNorthButton.width else 0f
-        val resetHeight = if (resetVisible) resetNorthButton.height else 0f
-        val controlsWidth = toggleWidth + if (resetVisible) spacing + resetWidth else 0f
-        val controlsHeight = max(toggleHeight, resetHeight)
-        var targetX = margin
-        var targetTopY = if (topBar.isVisible) topBar.y - spacing else stage.height - margin
+        val controlsWidth = renderModeToggle.width + if (resetVisible) spacing + resetNorthButton.width else 0f
 
-        val controlsVisible = uiEnabled
-            && techPolicyAndDiplomacy.isVisible
-            && techPolicyAndDiplomacy.width > 0f
-            && techPolicyAndDiplomacy.height > 0f
-        if (controlsVisible) {
-            val toggleLeft = targetX
-            val toggleRight = targetX + controlsWidth
-            val toggleBottom = targetTopY - controlsHeight
-            val toggleTop = targetTopY
-            val controlsLeft = techPolicyAndDiplomacy.x
-            val controlsRight = controlsLeft + techPolicyAndDiplomacy.width
-            val controlsBottom = techPolicyAndDiplomacy.y
-            val controlsTop = controlsBottom + techPolicyAndDiplomacy.height
-            val overlaps = toggleLeft < controlsRight
-                && toggleRight > controlsLeft
-                && toggleBottom < controlsTop
-                && toggleTop > controlsBottom
-            if (overlaps) {
-                targetX = controlsRight + spacing
-                val maxX = stage.width - margin - controlsWidth
-                if (targetX > maxX) {
-                    targetX = margin
-                    targetTopY = controlsBottom - spacing
-                }
-            }
-        }
-
+        val baseX = zoomController.x - spacing - controlsWidth
+        val baseY = zoomController.y
         val maxX = stage.width - margin - controlsWidth
-        val clampedX = if (maxX >= margin) targetX.coerceIn(margin, maxX) else margin
-        val minTopY = controlsHeight + margin
-        val maxTopY = stage.height - margin
-        val clampedTopY = if (maxTopY >= minTopY) targetTopY.coerceIn(minTopY, maxTopY) else maxTopY
-        renderModeToggle.setPosition(clampedX, clampedTopY, Align.topLeft)
+        val clampedX = if (maxX >= margin) baseX.coerceIn(margin, maxX) else margin
+
+        renderModeToggle.setPosition(clampedX, baseY, Align.bottomLeft)
         if (resetVisible) {
-            resetNorthButton.setPosition(clampedX + toggleWidth + spacing, clampedTopY, Align.topLeft)
+            resetNorthButton.setPosition(clampedX + renderModeToggle.width + spacing, baseY, Align.bottomLeft)
         }
     }
 
@@ -513,6 +479,7 @@ class WorldScreen(
         val state = resolveRenderModeState()
         requestedRenderMode = state.effectiveMode
         val use3D = state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
+        val switchedFrom2DTo3D = use3D && !wasUsingGlobeRenderMode
 
         renderModeToggle.isVisible = uiEnabled && state.showToggle
         renderModeToggle.touchable = if (renderModeToggle.isVisible) Touchable.enabled else Touchable.disabled
@@ -551,6 +518,13 @@ class WorldScreen(
             bottomUnitTable.selectSpy(null)
         }
         stage.scrollFocus = if (use3D) globeActor else mapHolder
+
+        if (switchedFrom2DTo3D) {
+            mapHolder.getViewportCenterTile()?.let { centeredTile ->
+                globeActor?.centerOnTile(centeredTile)
+            }
+        }
+        wasUsingGlobeRenderMode = use3D
 
         addKeyboardListener()
     }
@@ -661,7 +635,6 @@ class WorldScreen(
 
         if (techPolicyAndDiplomacy.update())
             displayTutorial(TutorialTrigger.OtherCivEncountered)
-        applyRenderModeTogglePosition()
 
         if (uiEnabled) {
             // UnitActionsTable measures geometry (its own y, techPolicyAndDiplomacy and fogOfWarButton), so call update this late
@@ -706,6 +679,7 @@ class WorldScreen(
         val posZoomFromRight = if (game.settings.showMinimap) minimapWrapper.width
         else bottomTileInfoTable.width
         zoomController.setPosition(stage.width - posZoomFromRight - 10f, 10f, Align.bottomRight)
+        applyRenderModeTogglePosition()
     }
 
     private fun getCurrentTutorialTask(): Event? {

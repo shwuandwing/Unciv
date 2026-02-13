@@ -109,6 +109,7 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
     private var globeActor: IcosaGlobeActor? = null
     private var globeViewState: GlobeCameraController.ViewState? = null
     private var requestedRenderMode = IcosaRenderMode.TwoD
+    private var wasUsingGlobeRenderMode = false
     var tileClickHandler: ((tile: Tile)->Unit)? = null
     private var zoomController: ZoomButtonPair? = null
     val descriptionTextField = UncivTextField("Enter a description for the users of this map")
@@ -421,6 +422,8 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
     private fun refreshRenderModeState() {
         val state = IcosaRenderModePolicy.resolve(tileMap.mapParameters.shape, requestedRenderMode)
         requestedRenderMode = state.effectiveMode
+        val use3D = state.effectiveMode == IcosaRenderMode.ThreeD && state.showToggle
+        val switchedFrom2DTo3D = use3D && !wasUsingGlobeRenderMode
 
         renderModeToggle.isVisible = state.showToggle
         resetNorthButton.isVisible = state.showToggle && state.effectiveMode == IcosaRenderMode.ThreeD
@@ -430,7 +433,6 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
         map2DButton.color = if (state.effectiveMode == IcosaRenderMode.TwoD) Color.GOLD else Color.WHITE
         map3DButton.color = if (state.effectiveMode == IcosaRenderMode.ThreeD) Color.GOLD else Color.WHITE
 
-        val use3D = state.effectiveMode == IcosaRenderMode.ThreeD && state.showToggle
         mapHolder.isVisible = !use3D
         mapHolder.touchable = if (use3D) Touchable.disabled else Touchable.enabled
         globeActor?.isVisible = use3D
@@ -448,6 +450,13 @@ class MapEditorScreen(map: TileMap? = null) : BaseScreen(), RecreateOnResize {
             enableKeyboardPanningListener(mapHolder, true)
             stage.scrollFocus = mapHolder
         }
+
+        if (switchedFrom2DTo3D) {
+            mapHolder.getViewportCenterTile()?.let { centeredTile ->
+                globeActor?.centerOnTile(centeredTile)
+            }
+        }
+        wasUsingGlobeRenderMode = use3D
     }
 
     fun startBackgroundJob(
