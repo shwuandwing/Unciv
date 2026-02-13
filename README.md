@@ -4,7 +4,8 @@
 
 ## What is this?
 
-This is a fork of [Unciv](https://github.com/yairm210/Unciv/).  The goal is to see what a 4X turn based strategy game feels like with spherical based tiling.  In this case, the tiling is on a [goldberg polyhedra (class 1)] (https://en.wikipedia.org/wiki/Goldberg_polyhedron) based on an isocahedron.
+This is a fork of [Unciv](https://github.com/yairm210/Unciv/).  The goal is to see what a 4X turn based strategy game feels like with spherical based tiling.  In this case, the tiling is on a 
+[goldberg polyhedra - class 1](https://en.wikipedia.org/wiki/Goldberg_polyhedron) based on an isocahedron.
 
 ## Is this any good?
 
