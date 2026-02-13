@@ -1,6 +1,8 @@
 package com.unciv.ui.components.widgets
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input
+import com.badlogic.gdx.scenes.scene2d.Event
 import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.math.Interpolation
 import com.badlogic.gdx.math.MathUtils
@@ -271,7 +273,15 @@ open class ZoomableScrollPane(
     }
 
     override fun draw(batch: Batch?, parentAlpha: Float) {
-        if (isAutoScrollEnabled && !Gdx.input.isTouched) {
+        val anyMouseButtonDown = Gdx.input.isButtonPressed(Input.Buttons.LEFT)
+            || Gdx.input.isButtonPressed(Input.Buttons.RIGHT)
+            || Gdx.input.isButtonPressed(Input.Buttons.MIDDLE)
+            || Gdx.input.isButtonPressed(Input.Buttons.BACK)
+            || Gdx.input.isButtonPressed(Input.Buttons.FORWARD)
+
+        val canAutoScroll = isAutoScrollEnabled
+            && ZoomableMouseInteractionPolicy.shouldAutoScroll(Gdx.input.isTouched, anyMouseButtonDown)
+        if (canAutoScroll) {
 
             val posX = Gdx.input.x
             val posY = Gdx.input.y  // Viewport coord: goes down, unlike world coordinates
@@ -299,8 +309,30 @@ open class ZoomableScrollPane(
     }
 
     inner class FlickScrollListener : ActorGestureListener() {
+        override fun handle(event: Event): Boolean {
+            if (event is InputEvent && event.type == InputEvent.Type.touchDown) {
+                val shouldStartPan = ZoomableMouseInteractionPolicy.shouldStartPan(event.button)
+                if (!shouldStartPan) return false
+            }
+            return super.handle(event)
+        }
+
         private var isPanning = false
         override fun pan(event: InputEvent, x: Float, y: Float, deltaX: Float, deltaY: Float) {
+            val leftDown = Gdx.input.isButtonPressed(Input.Buttons.LEFT)
+            val rightDown = Gdx.input.isButtonPressed(Input.Buttons.RIGHT)
+            val middleDown = Gdx.input.isButtonPressed(Input.Buttons.MIDDLE)
+            val backDown = Gdx.input.isButtonPressed(Input.Buttons.BACK)
+            val forwardDown = Gdx.input.isButtonPressed(Input.Buttons.FORWARD)
+            if (!ZoomableMouseInteractionPolicy.shouldContinuePan(
+                    leftDown = leftDown,
+                    rightDown = rightDown,
+                    middleDown = middleDown,
+                    backDown = backDown,
+                    forwardDown = forwardDown
+                )) {
+                return
+            }
             if (!isPanning) {
                 isPanning = true
                 onPanStartListener?.invoke()

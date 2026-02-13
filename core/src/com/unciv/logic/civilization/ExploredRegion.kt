@@ -18,7 +18,6 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 class ExploredRegion : IsPartOfGameInfoSerialization {
-
     @Transient
     private var worldWrap = false
 
@@ -48,6 +47,12 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
 
     @Transient
     private var worldPeriodX = 0f
+
+    @Transient
+    private var lastStageMapMaxX = Float.NaN
+
+    @Transient
+    private var lastStageMapMaxY = Float.NaN
 
     // Rectangle for positioning the camera viewport on the minimap
     @Transient
@@ -91,6 +96,10 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
         this.tileMap = tileMap
         useWorldCoords = mapParameters.shape == MapShape.icosahedron && tileMap != null
         worldPeriodX = if (useWorldCoords && tileMap != null) tileMap.topology.getWorldBounds().width else 0f
+        shouldRecalculateCoords = true
+        shouldUpdateMinimap = true
+        lastStageMapMaxX = Float.NaN
+        lastStageMapMaxY = Float.NaN
         this.worldWrap = mapParameters.worldWrap
         evenMapWidth = worldWrap
         rectangularMap = false
@@ -105,6 +114,13 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
 
         if (useWorldCoords && civ != null) {
             recalculateWorldBoundsFromExploredTiles(civ)
+        }
+    }
+
+    fun ensureStageCoords(mapMaxX: Float, mapMaxY: Float) {
+        val viewportChanged = mapMaxX != lastStageMapMaxX || mapMaxY != lastStageMapMaxY
+        if (shouldRecalculateCoords || viewportChanged) {
+            calculateStageCoords(mapMaxX, mapMaxY)
         }
     }
 
@@ -264,6 +280,8 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
 
     fun calculateStageCoords(mapMaxX: Float, mapMaxY: Float) {
         shouldRecalculateCoords = false
+        lastStageMapMaxX = mapMaxX
+        lastStageMapMaxY = mapMaxY
 
         // Check if we explored the whole world wrap map horizontally
         if (useWorldCoords && worldPeriodX > 0f) {

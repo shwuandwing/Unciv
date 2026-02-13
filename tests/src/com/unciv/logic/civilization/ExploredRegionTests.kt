@@ -166,6 +166,36 @@ class ExploredRegionTests {
         }
     }
 
+    @Test
+    fun icosahedronEnsureStageCoordsRecalculatesWhenViewportBoundsChange() {
+        val testGame = TestGame()
+        val mapParameters = MapParameters().apply {
+            shape = MapShape.icosahedron
+            mapSize = MapSize.Tiny
+        }
+        val map = GoldbergMapBuilder.build(mapParameters, testGame.ruleset)
+        map.gameInfo = testGame.gameInfo
+        testGame.gameInfo.tileMap = map
+
+        val civ = testGame.addCiv(isPlayer = true)
+        civ.exploredRegion.setMapParameters(map.mapParameters, map, civ)
+
+        val seed = map.tileList.first()
+        val explored = sequenceOf(seed) + seed.neighbors.asSequence().take(5)
+        for (tile in explored) tile.setExplored(civ, true, seed.position)
+
+        val region = civ.exploredRegion
+        region.calculateStageCoords(mapMaxX = 2200f, mapMaxY = 1200f)
+        assertFalse(region.shouldRecalculateCoords())
+
+        val topBefore = region.getTopY()
+        val bottomBefore = region.getBottomY()
+
+        region.ensureStageCoords(mapMaxX = 2200f, mapMaxY = 700f)
+        assertTrue(kotlin.math.abs(region.getTopY() - topBefore) > 0.0001f)
+        assertTrue(kotlin.math.abs(region.getBottomY() - bottomBefore) > 0.0001f)
+    }
+
     private fun minimalCircularWidth(values: List<Float>, period: Float): Float {
         if (values.isEmpty()) return 0f
         if (values.size == 1 || period <= 0f) return 0f

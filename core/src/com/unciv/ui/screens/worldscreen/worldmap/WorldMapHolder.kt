@@ -818,7 +818,7 @@ class WorldMapHolder(
         if (worldScreen.viewingCiv.isSpectator()) return result
 
         val exploredRegion = worldScreen.viewingCiv.exploredRegion
-        if (exploredRegion.shouldRecalculateCoords()) exploredRegion.calculateStageCoords(maxX, maxY)
+        exploredRegion.ensureStageCoords(maxX, maxY)
         if (!exploredRegion.shouldRestrictX()) return result
 
         val leftX = exploredRegion.getLeftX()
@@ -837,13 +837,19 @@ class WorldMapHolder(
         if (worldScreen.viewingCiv.isSpectator()) return result
 
         val exploredRegion = worldScreen.viewingCiv.exploredRegion
-        if (exploredRegion.shouldRecalculateCoords()) exploredRegion.calculateStageCoords(maxX, maxY)
+        exploredRegion.ensureStageCoords(maxX, maxY)
 
         val topY = exploredRegion.getTopY()
         val bottomY = exploredRegion.getBottomY()
+        val normalized = ExploredRegionClampPolicy.sanitizeVerticalBounds(topY, bottomY, maxY)
+        if (normalized == null) return result
+        val normalizedTop = normalized.top
+        val normalizedBottom = normalized.bottom
 
-        if (result < topY) result = topY
-        else if (result > bottomY) result = bottomY
+        if (result < normalizedTop)
+            result = normalizedTop
+        else if (result > normalizedBottom)
+            result = normalizedBottom
 
         return result
     }
