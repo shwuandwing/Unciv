@@ -731,6 +731,19 @@ class WorldMapHolder(
 
     var blinkAction: Action? = null
 
+    fun getViewportCenterTile(): Tile? {
+        if (tileGroups.isEmpty()) return null
+        val viewportCenterX = scrollX
+        val viewportCenterY = maxY - scrollY
+        return tileGroups.values.minByOrNull { tileGroup ->
+            val centerX = tileGroup.x + tileGroup.width / 2f
+            val centerY = tileGroup.y + tileGroup.width / 2f
+            val dx = centerX - viewportCenterX
+            val dy = centerY - viewportCenterY
+            dx * dx + dy * dy
+        }?.tile
+    }
+
     /** Scrolls the world map to specified coordinates.
      * @param vector Position to center on
      * @param immediately Do so without animation

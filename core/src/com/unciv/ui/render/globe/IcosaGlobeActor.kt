@@ -207,6 +207,20 @@ class IcosaGlobeActor(
         cameraController.zoomBy(1f)
     }
 
+    fun centerOnTile(tile: Tile) {
+        refreshTileMap()
+        val mapTile = when {
+            tile.tileMap === tileMap -> tile
+            tileMap.contains(tile.position) -> tileMap[tile.position]
+            else -> return
+        }
+        val tileIndex = mapTile.zeroBasedIndex
+        if (tileIndex !in cache.centers.indices) return
+        cameraController.centerOnDirection(cache.centers[tileIndex])
+        selectedTileIndex = tileIndex
+        hoveredTileIndex = tileIndex
+    }
+
     @Readonly
     fun getCameraViewState(): GlobeCameraController.ViewState = cameraController.snapshot()
 

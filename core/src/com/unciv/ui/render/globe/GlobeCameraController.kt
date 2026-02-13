@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector3
 import yairm210.purity.annotations.Readonly
+import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -34,6 +35,13 @@ class GlobeCameraController(
     fun zoomBy(scrollAmountY: Float) {
         val scale = 1f + scrollAmountY * zoomSensitivity
         distance = (distance * scale).coerceIn(minDistance, maxDistance)
+    }
+
+    fun centerOnDirection(direction: Vector3) {
+        if (direction.isZero(0.0001f)) return
+        val normalized = direction.cpy().nor()
+        yawDegrees = (MathUtils.radiansToDegrees * kotlin.math.atan2(normalized.z, normalized.x))
+        pitchDegrees = (MathUtils.radiansToDegrees * asin(normalized.y)).coerceIn(-85f, 85f)
     }
 
     fun applyTo(camera: PerspectiveCamera) {
