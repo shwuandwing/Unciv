@@ -273,10 +273,7 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         var miniViewport = worldViewport
 
         if (civInfo != null && !DebugUtils.VISIBLE_MAP) {
-            if (civInfo.exploredRegion.shouldRecalculateCoords()) civInfo.exploredRegion.calculateStageCoords(
-                worldWidth,
-                worldHeight
-            )
+            civInfo.exploredRegion.ensureStageCoords(worldWidth, worldHeight)
 
             val exploredRectangle = civInfo.exploredRegion.getRectangle()
             worldToMiniFactor = Vector2(
