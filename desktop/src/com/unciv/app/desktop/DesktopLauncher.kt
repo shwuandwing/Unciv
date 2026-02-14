@@ -14,9 +14,12 @@ import com.unciv.app.desktop.DesktopScreenMode.Companion.getMaximumWindowBounds
 import com.unciv.json.json
 import com.unciv.logic.files.SETTINGS_FILE_NAME
 import com.unciv.logic.files.UncivFiles
+import com.unciv.logic.map.topology.GoldbergNetLayoutBuilder
+import com.unciv.logic.map.topology.GoldbergTopologyDumpBuilder
 import com.unciv.models.metadata.GameSettings
 import com.unciv.models.metadata.GameSettings.ScreenSize
 import com.unciv.models.metadata.GameSettings.WindowState
+import com.unciv.models.metadata.BaseRuleset
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.RulesetCache
 import com.unciv.models.ruleset.validation.RulesetErrorSeverity
@@ -65,6 +68,18 @@ internal object DesktopLauncher {
         val visibilitySavePath = parseVisibilityCheckPath(arg)
         if (visibilitySavePath != null) {
             val ok = runVisibilityCheck(visibilitySavePath)
+            exitProcess(if (ok) 0 else 1)
+        }
+
+        val topologyDumpOutput = parseArgPathValue(arg, "--dump-icosa-topology")
+        if (topologyDumpOutput != null) {
+            val frequency = parseArgIntValue(arg, "--frequency")
+            if (frequency == null || frequency <= 0) {
+                System.err.println("Missing or invalid --frequency for --dump-icosa-topology (expected positive integer)")
+                exitProcess(2)
+            }
+            val layoutId = parseArgStringValue(arg, "--layout") ?: GoldbergNetLayoutBuilder.DEFAULT_LAYOUT
+            val ok = runIcosaTopologyDump(topologyDumpOutput, frequency, layoutId)
             exitProcess(if (ok) 0 else 1)
         }
 
@@ -255,4 +270,82 @@ internal object DesktopLauncher {
 
         return parts.joinToString(" ").trim().ifEmpty { null }
     }
+
+    private fun runIcosaTopologyDump(outputPath: String, frequency: Int, layoutId: String): Boolean {
+        val success = AtomicBoolean(true)
+        val done = CountDownLatch(1)
+
+        val config = HeadlessApplicationConfiguration().apply {
+            updatesPerSecond = -1
+        }
+
+        val listener = object : ApplicationListener {
+            override fun create() {
+                try {
+                    runIcosaTopologyDumpInternal(outputPath, frequency, layoutId)
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
+                    success.set(false)
+                } finally {
+                    done.countDown()
+                    Gdx.app.exit()
+                }
+            }
+
+            override fun resize(width: Int, height: Int) {}
+            override fun render() {}
+            override fun pause() {}
+            override fun resume() {}
+            override fun dispose() {}
+        }
+
+        HeadlessApplication(listener, config)
+        done.await()
+        return success.get()
+    }
+
+    private fun runIcosaTopologyDumpInternal(outputPath: String, frequency: Int, layoutId: String) {
+        val game = UncivGame(true)
+        UncivGame.Current = game
+        UncivGame.Current.settings = GameSettings()
+
+        RulesetCache.loadRulesets(consoleMode = true, noMods = false)
+        val ruleset = RulesetCache[BaseRuleset.Civ_V_GnK.fullName]
+            ?: throw IllegalStateException("Could not load ${BaseRuleset.Civ_V_GnK.fullName} ruleset")
+
+        val dump = GoldbergTopologyDumpBuilder.buildDump(
+            frequency = frequency,
+            ruleset = ruleset,
+            layoutId = layoutId,
+            mapName = "IcosaTopology-f$frequency"
+        )
+
+        val outputFile = File(outputPath)
+        outputFile.parentFile?.mkdirs()
+        outputFile.writeText(json().toJson(dump), Charsets.UTF_8)
+        println("Wrote Icosa topology dump to ${outputFile.absolutePath} (tiles=${dump.tileCount}, edges=${dump.edges.size})")
+    }
+
+    private fun parseArgPathValue(args: Array<String>, key: String): String? {
+        val index = args.indexOfFirst { it == key || it.startsWith("$key=") }
+        if (index < 0) return null
+        val initial = args[index].substringAfter("=", "")
+        val extra = args.drop(index + 1).takeWhile { !it.startsWith("--") }
+        val parts = ArrayList<String>(1 + extra.size)
+        if (initial.isNotBlank()) parts.add(initial)
+        parts.addAll(extra)
+        return parts.joinToString(" ").trim().ifEmpty { null }
+    }
+
+    private fun parseArgStringValue(args: Array<String>, key: String): String? {
+        val index = args.indexOfFirst { it == key || it.startsWith("$key=") }
+        if (index < 0) return null
+        val inline = args[index].substringAfter("=", "")
+        if (inline.isNotBlank()) return inline.trim()
+        val next = args.getOrNull(index + 1) ?: return null
+        return if (next.startsWith("--")) null else next.trim().ifEmpty { null }
+    }
+
+    private fun parseArgIntValue(args: Array<String>, key: String): Int? =
+        parseArgStringValue(args, key)?.toIntOrNull()
 }
