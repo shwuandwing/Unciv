@@ -1,0 +1,4 @@
+numpy==2.4.2
+tifffile==2026.1.28
+imagecodecs==2026.1.14
+pytest==9.0.2
