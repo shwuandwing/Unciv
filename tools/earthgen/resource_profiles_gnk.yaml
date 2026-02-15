@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "ruleset": "Civ V - Gods & Kings",
+  "resources": [
+    {
+      "name": "Horses",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 5.6,
+      "min_count": 10,
+      "min_distance": 2,
+      "major_ratio": 0.56,
+      "dataset_weights": {"plains": 1.0, "grassland": 0.9, "interiorness": 0.8, "aridity": 0.6, "river_proximity": 0.4, "hill": -0.2},
+      "region_boosts": [{"min_lon": 25, "max_lon": 115, "min_lat": 34, "max_lat": 57, "boost": 0.55}]
+    },
+    {
+      "name": "Iron",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 6.0,
+      "min_count": 12,
+      "min_distance": 2,
+      "major_ratio": 0.58,
+      "dataset_weights": {"hill": 1.3, "slope": 0.9, "elevation": 0.8, "desert": 0.2, "tundra": 0.2}
+    },
+    {
+      "name": "Coal",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 4.6,
+      "min_count": 9,
+      "min_distance": 2,
+      "major_ratio": 0.6,
+      "dataset_weights": {"hill": 1.2, "forest": 0.7, "jungle": 0.3, "temperate": 0.6, "interiorness": 0.4}
+    },
+    {
+      "name": "Oil",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 4.2,
+      "min_count": 9,
+      "min_distance": 2,
+      "major_ratio": 0.66,
+      "dataset_weights": {"desert": 1.0, "coast_proximity": 0.7, "water_shallow": 1.0, "tundra": 0.4, "marsh": 0.4, "aridity": 0.8},
+      "region_boosts": [
+        {"min_lon": 34, "max_lon": 63, "min_lat": 14, "max_lat": 38, "boost": 1.0},
+        {"min_lon": -100, "max_lon": -78, "min_lat": 18, "max_lat": 33, "boost": 0.45},
+        {"min_lon": -8, "max_lon": 10, "min_lat": 50, "max_lat": 63, "boost": 0.35},
+        {"min_lon": 53, "max_lon": 88, "min_lat": 52, "max_lat": 70, "boost": 0.3}
+      ]
+    },
+    {
+      "name": "Aluminum",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 3.8,
+      "min_count": 8,
+      "min_distance": 2,
+      "major_ratio": 0.57,
+      "dataset_weights": {"hill": 1.2, "slope": 1.0, "tropical": 0.6, "desert": 0.2},
+      "region_boosts": [
+        {"min_lon": -75, "max_lon": -35, "min_lat": -18, "max_lat": 6, "boost": 0.45},
+        {"min_lon": 110, "max_lon": 155, "min_lat": -30, "max_lat": -10, "boost": 0.55}
+      ]
+    },
+    {
+      "name": "Uranium",
+      "resource_type": "Strategic",
+      "target_density_per_1000": 2.3,
+      "min_count": 6,
+      "min_distance": 3,
+      "major_ratio": 0.62,
+      "dataset_weights": {"tundra": 0.7, "snow": 0.6, "desert": 0.8, "hill": 0.8, "interiorness": 0.8, "elevation": 0.4},
+      "region_boosts": [
+        {"min_lon": 15, "max_lon": 85, "min_lat": 35, "max_lat": 58, "boost": 0.6},
+        {"min_lon": 111, "max_lon": 152, "min_lat": -36, "max_lat": -16, "boost": 0.7},
+        {"min_lon": -120, "max_lon": -94, "min_lat": 45, "max_lat": 63, "boost": 0.35}
+      ]
+    },
+
+    {
+      "name": "Furs",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.4,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"forest": 1.0, "tundra": 1.2, "polar": 0.7}
+    },
+    {
+      "name": "Cotton",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.1,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 0.8, "plains": 0.8, "warmth": 0.7, "river_proximity": 0.8, "wetness": 0.3},
+      "region_boosts": [
+        {"min_lon": -103, "max_lon": -80, "min_lat": 28, "max_lat": 39, "boost": 0.35},
+        {"min_lon": 70, "max_lon": 90, "min_lat": 18, "max_lat": 31, "boost": 0.35},
+        {"min_lon": 24, "max_lon": 36, "min_lat": 23, "max_lat": 33, "boost": 0.35}
+      ]
+    },
+    {
+      "name": "Dyes",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.0,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"jungle": 1.3, "forest": 0.7, "wetness": 0.9, "tropical": 0.9}
+    },
+    {
+      "name": "Gems",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.95,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.1, "slope": 0.9, "jungle": 0.5, "forest": 0.4}
+    },
+    {
+      "name": "Gold Ore",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.95,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.0, "slope": 0.8, "desert": 0.6, "forest": 0.2, "jungle": 0.2}
+    },
+    {
+      "name": "Silver",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.95,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.1, "slope": 0.7, "tundra": 0.4, "temperate": 0.4}
+    },
+    {
+      "name": "Incense",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.85,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"desert": 1.4, "aridity": 1.1, "warmth": 0.5},
+      "region_boosts": [
+        {"min_lon": -20, "max_lon": 55, "min_lat": 10, "max_lat": 40, "boost": 0.4},
+        {"min_lon": 60, "max_lon": 95, "min_lat": 8, "max_lat": 28, "boost": 0.25}
+      ]
+    },
+    {
+      "name": "Ivory",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.0,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 1.0, "plains": 0.8, "tropical": 0.8, "wetness": 0.5},
+      "region_boosts": [
+        {"min_lon": -15, "max_lon": 45, "min_lat": -14, "max_lat": 16, "boost": 0.65},
+        {"min_lon": 15, "max_lon": 85, "min_lat": 8, "max_lat": 28, "boost": 0.25}
+      ]
+    },
+    {
+      "name": "Silk",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.9,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"forest": 0.7, "jungle": 1.0, "warmth": 0.8, "wetness": 0.6},
+      "region_boosts": [{"min_lon": 95, "max_lon": 128, "min_lat": 18, "max_lat": 40, "boost": 0.5}]
+    },
+    {
+      "name": "Spices",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.05,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"jungle": 1.2, "forest": 0.6, "warmth": 0.9, "wetness": 1.0},
+      "region_boosts": [{"min_lon": 95, "max_lon": 145, "min_lat": -10, "max_lat": 22, "boost": 0.45}]
+    },
+    {
+      "name": "Wine",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.1,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 0.9, "plains": 0.8, "temperate": 1.0, "aridity": 0.3},
+      "region_boosts": [
+        {"min_lon": -11, "max_lon": 42, "min_lat": 30, "max_lat": 47, "boost": 0.55},
+        {"min_lon": -125, "max_lon": -116, "min_lat": 33, "max_lat": 49, "boost": 0.35},
+        {"min_lon": 16, "max_lon": 31, "min_lat": -35, "max_lat": -29, "boost": 0.25},
+        {"min_lon": -74, "max_lon": -66, "min_lat": -38, "max_lat": -30, "boost": 0.25}
+      ]
+    },
+    {
+      "name": "Sugar",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.2,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 0.9, "marsh": 1.0, "river_proximity": 1.0, "warmth": 1.0, "wetness": 1.1},
+      "region_boosts": [
+        {"min_lon": -85, "max_lon": -45, "min_lat": -25, "max_lat": 25, "boost": 0.45},
+        {"min_lon": 70, "max_lon": 90, "min_lat": 8, "max_lat": 26, "boost": 0.35}
+      ]
+    },
+    {
+      "name": "Marble",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.8,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.0, "slope": 0.9, "plains": 0.5, "desert": 0.4}
+    },
+    {
+      "name": "Whales",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.8,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"water_deep": 1.0, "polar": 0.7, "temperate": 0.5}
+    },
+    {
+      "name": "Pearls",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.8,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"water_shallow": 1.1, "tropical": 0.9, "wetness": 0.2}
+    },
+    {
+      "name": "Jewelry",
+      "resource_type": "Luxury",
+      "enabled": false,
+      "target_density_per_1000": 0.0,
+      "min_count": 0,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "allowed_terrains": ["Grassland", "Plains", "Hill"],
+      "dataset_weights": {"temperate": 1.0},
+      "notes": "City-state only in ruleset; disabled for natural Earth generation."
+    },
+    {
+      "name": "Porcelain",
+      "resource_type": "Luxury",
+      "enabled": false,
+      "target_density_per_1000": 0.0,
+      "min_count": 0,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "allowed_terrains": ["Grassland", "Plains", "Hill"],
+      "dataset_weights": {"temperate": 1.0},
+      "notes": "City-state only in ruleset; disabled for natural Earth generation."
+    },
+    {
+      "name": "Citrus",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 1.0,
+      "min_count": 3,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"jungle": 0.8, "forest": 0.4, "warmth": 1.0, "wetness": 0.9}
+    },
+    {
+      "name": "Copper",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.9,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.1, "slope": 0.8, "grassland": 0.3, "tundra": 0.2}
+    },
+    {
+      "name": "Crab",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.9,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"water_shallow": 1.2, "temperate": 0.5, "tropical": 0.4}
+    },
+    {
+      "name": "Salt",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.9,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"desert": 1.1, "plains": 0.6, "tundra": 0.4, "interiorness": 0.8, "hill": 0.2}
+    },
+    {
+      "name": "Truffles",
+      "resource_type": "Luxury",
+      "target_density_per_1000": 0.85,
+      "min_count": 2,
+      "min_distance": 3,
+      "major_ratio": 0.0,
+      "dataset_weights": {"forest": 1.0, "jungle": 0.6, "marsh": 0.5, "temperate": 0.5, "wetness": 0.4}
+    },
+
+    {
+      "name": "Cattle",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 4.8,
+      "min_count": 8,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 1.2, "temperate": 0.6, "interiorness": 0.4}
+    },
+    {
+      "name": "Sheep",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 4.3,
+      "min_count": 7,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"hill": 1.3, "temperate": 0.6, "slope": 0.4}
+    },
+    {
+      "name": "Deer",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 3.9,
+      "min_count": 6,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"forest": 1.2, "tundra": 0.9, "polar": 0.4}
+    },
+    {
+      "name": "Bananas",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 3.5,
+      "min_count": 6,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"jungle": 1.4, "tropical": 1.0, "wetness": 1.0}
+    },
+    {
+      "name": "Wheat",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 4.6,
+      "min_count": 7,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"plains": 1.1, "grassland": 0.7, "river_proximity": 0.9, "temperate": 0.4}
+    },
+    {
+      "name": "Stone",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 3.7,
+      "min_count": 6,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"grassland": 0.5, "desert": 0.5, "tundra": 0.4, "hill": 0.8, "slope": 0.8}
+    },
+    {
+      "name": "Fish",
+      "resource_type": "Bonus",
+      "target_density_per_1000": 6.0,
+      "min_count": 10,
+      "min_distance": 2,
+      "major_ratio": 0.0,
+      "dataset_weights": {"water_shallow": 1.3, "coast_proximity": 1.0}
+    }
+  ]
+}

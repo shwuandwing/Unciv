@@ -24,6 +24,14 @@ tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
   --size Huge \
   --name "Earth-Icosa-Huge" \
   --output android/assets/maps/Earth-Icosa-Huge
+
+# 5) Generate map with realistic resources (default behavior)
+tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
+  --size Huge \
+  --name "Earth-Icosa-Huge-resources" \
+  --resource-density default \
+  --resource-seed 1337 \
+  --output android/assets/maps/Earth-Icosa-Huge-resources
 ```
 
 ## Common Options
@@ -32,6 +40,12 @@ tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
 - `--river-count <n>` (default `20`)
 - `--output <path>` (required)
 - `--name <map-name>`
+- `--enable-resources` / `--disable-resources` (default: enabled)
+- `--resource-density sparse|default|abundant|<multiplier>`
+- `--resource-seed <int>`
+- `--resource-profile <path>`
+- `--disable-resource <name>` (repeatable)
+- `--resource-fairness` / `--no-resource-fairness` (default: disabled)
 
 Orientation defaults (current):
 
@@ -45,6 +59,29 @@ You can override with:
 - `--flip-longitude`
 - `--longitude-offset <degrees>`
 - `--pole-alignment map-centered`
+
+Resource examples:
+
+```bash
+# Sparse resources, deterministic layout
+tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
+  --size Large \
+  --resource-density sparse \
+  --resource-seed 99 \
+  --output android/assets/maps/Earth-Icosa-Large-res-sparse
+
+# Keep resources enabled but disable one type
+tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
+  --size Huge \
+  --disable-resource Uranium \
+  --output android/assets/maps/Earth-Icosa-Huge-no-uranium
+
+# Disable all resource placement (terrain/hydrology only)
+tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
+  --size Huge \
+  --disable-resources \
+  --output android/assets/maps/Earth-Icosa-Huge-terrain-only
+```
 
 ## Validate
 

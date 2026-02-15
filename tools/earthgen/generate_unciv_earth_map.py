@@ -6,7 +6,7 @@ import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 # Allow running as a script from repository root without `-m`.
 if __package__ in (None, ""):
@@ -14,6 +14,15 @@ if __package__ in (None, ""):
 
 from tools.earthgen.dataset_sampling import EarthDatasets, load_earth_datasets
 from tools.earthgen.river_projection import CanonicalEdge, project_river_lines_to_edges
+from tools.earthgen.resource_dataset_sampling import build_resource_dataset_layers
+from tools.earthgen.resource_placement import ResourcePlacementResult, place_resources
+from tools.earthgen.resource_rules_gnk import (
+    DEFAULT_RESOURCE_PROFILE_PATH,
+    RULESET_TILE_RESOURCES_PATH,
+    load_resource_profiles,
+    load_ruleset_resource_definitions,
+)
+from tools.earthgen.resource_scoring import rank_candidates_by_resource
 from tools.earthgen.terrain_rules_gnk import (
     ClimateSample,
     LAND_BASE_TERRAINS,
@@ -59,6 +68,7 @@ VALID_FEATURES = {
     "Marsh",
     "Ice",
 }
+RESOURCE_DENSITY_MODES = ("sparse", "default", "abundant")
 
 
 @dataclass
@@ -71,6 +81,9 @@ class TileClassification:
     neighbors: Tuple[int, ...]
     base_terrain: str
     features: List[str]
+    temperature_c: float = 0.0
+    annual_precip_mm: float = 0.0
+    elevation_m: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -201,13 +214,17 @@ def classify_tiles(
         on_land = datasets.point_on_land(sample_lon, sample_lat)
         in_lake = datasets.point_in_lake(sample_lon, sample_lat)
 
+        temperature = datasets.sample_temperature(sample_lon, sample_lat)
+        precipitation = datasets.sample_precipitation(sample_lon, sample_lat)
+        elevation = datasets.sample_elevation(sample_lon, sample_lat)
+
         climate = ClimateSample(
             is_land=on_land,
             is_lake=in_lake,
             latitude=sample_lat,
-            temperature_c=datasets.sample_temperature(sample_lon, sample_lat),
-            annual_precip_mm=datasets.sample_precipitation(sample_lon, sample_lat),
-            elevation_m=datasets.sample_elevation(sample_lon, sample_lat),
+            temperature_c=temperature,
+            annual_precip_mm=precipitation,
+            elevation_m=elevation,
         )
 
         base = classify_base_terrain(climate)
@@ -223,6 +240,9 @@ def classify_tiles(
                 neighbors=tile.neighbors,
                 base_terrain=base,
                 features=features,
+                temperature_c=float(temperature if temperature is not None else 0.0),
+                annual_precip_mm=float(precipitation if precipitation is not None else 0.0),
+                elevation_m=float(elevation if elevation is not None else 0.0),
             )
         )
 
@@ -257,6 +277,7 @@ def build_map_payload(
     map_name: str,
     river_edges: Iterable[CanonicalEdge] = (),
     size_name: str | None = None,
+    resources: Mapping[int, tuple[str, int]] | None = None,
 ) -> Dict:
     map_parameters = dict(topology.map_parameters_template)
     map_parameters["name"] = map_name
@@ -283,6 +304,13 @@ def build_map_payload(
         }
         if tile.features:
             tile_json["terrainFeatures"] = list(tile.features)
+        if resources is not None:
+            resource_entry = resources.get(tile.index)
+            if resource_entry is not None:
+                resource_name, amount = resource_entry
+                tile_json["resource"] = resource_name
+                if amount > 0:
+                    tile_json["resourceAmount"] = int(amount)
         tile_list.append(tile_json)
 
     river_writer_map = build_edge_writer_index_from_dump(topology)
@@ -307,6 +335,54 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--size", choices=tuple(PREDEFINED_SIZE_TO_FREQUENCY.keys()), default=None)
     parser.add_argument("--frequency", type=int, default=None, help="Custom frequency; overrides --size")
     parser.add_argument("--river-count", type=int, default=20, help="Number of longest rivers to project")
+    resource_toggle = parser.add_mutually_exclusive_group()
+    resource_toggle.add_argument(
+        "--enable-resources",
+        dest="enable_resources",
+        action="store_true",
+        default=True,
+        help="Enable realistic Earth resource placement (default: enabled)",
+    )
+    resource_toggle.add_argument(
+        "--disable-resources",
+        "--no-enable-resources",
+        dest="enable_resources",
+        action="store_false",
+        help="Disable realistic Earth resource placement",
+    )
+    parser.add_argument(
+        "--resource-density",
+        default="default",
+        help="Resource density mode (sparse/default/abundant) or a numeric multiplier",
+    )
+    parser.add_argument(
+        "--resource-seed",
+        type=int,
+        default=1337,
+        help="Seed used by deterministic resource placement",
+    )
+    parser.add_argument(
+        "--resource-profile",
+        default=str(DEFAULT_RESOURCE_PROFILE_PATH),
+        help="Resource profile file (JSON-in-YAML format)",
+    )
+    parser.add_argument(
+        "--ruleset-resources",
+        default=str(RULESET_TILE_RESOURCES_PATH),
+        help="Ruleset TileResources.json used for resource validation",
+    )
+    parser.add_argument(
+        "--disable-resource",
+        action="append",
+        default=[],
+        help="Disable one resource by name; can be repeated",
+    )
+    parser.add_argument(
+        "--resource-fairness",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable strategic starvation guardrails (default: disabled)",
+    )
     parser.add_argument(
         "--longitude-offset",
         type=float,
@@ -334,6 +410,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name", default="Earth-Icosahedron", help="Map name")
     parser.add_argument("--output", required=True, help="Output map file path")
     return parser.parse_args()
+
+
+def parse_resource_density(value: str) -> tuple[str, float]:
+    normalized = value.strip().lower()
+    if normalized in RESOURCE_DENSITY_MODES:
+        return normalized, 1.0
+    try:
+        multiplier = float(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid --resource-density '{value}'. Use sparse/default/abundant or numeric multiplier."
+        ) from exc
+    if multiplier <= 0.0:
+        raise ValueError("--resource-density multiplier must be > 0")
+    return "default", multiplier
+
+
+def summarize_resource_counts(result: ResourcePlacementResult, ruleset: Mapping[str, object]) -> str:
+    grouped: Dict[str, int] = {"Strategic": 0, "Luxury": 0, "Bonus": 0}
+    for resource_name, count in result.counts_by_resource.items():
+        if count <= 0:
+            continue
+        resource_type = str(getattr(ruleset[resource_name], "resource_type"))
+        grouped[resource_type] += count
+    parts = [f"{k.lower()}={v}" for k, v in grouped.items()]
+    return " ".join(parts)
 
 
 def main() -> int:
@@ -373,6 +475,56 @@ def main() -> int:
         tile_coordinates=sampling_coordinates,
     )
 
+    resource_payload: Dict[int, tuple[str, int]] | None = None
+    resource_summary = "resources=disabled"
+    if args.enable_resources:
+        ruleset_resources_path = Path(args.ruleset_resources)
+        resource_profile_path = Path(args.resource_profile)
+        ruleset_resources = load_ruleset_resource_definitions(ruleset_resources_path)
+        profiles = load_resource_profiles(
+            profile_path=resource_profile_path,
+            ruleset_path=ruleset_resources_path,
+        )
+        density_mode, density_multiplier = parse_resource_density(str(args.resource_density))
+        disabled_resources = set(args.disable_resource or [])
+        unknown_disabled = sorted(disabled_resources - set(ruleset_resources.keys()))
+        if unknown_disabled:
+            raise ValueError(f"--disable-resource contains unknown resource(s): {', '.join(unknown_disabled)}")
+
+        layers = build_resource_dataset_layers(
+            topology=topology,
+            classified_tiles=tiles,
+            river_edges=river_projection.edges,
+        )
+        ranked = rank_candidates_by_resource(
+            profiles=profiles,
+            ruleset_definitions=ruleset_resources,
+            tiles=tiles,
+            layers=layers,
+            disabled_resources=disabled_resources,
+        )
+        placement = place_resources(
+            topology=topology,
+            tiles=tiles,
+            ruleset_definitions=ruleset_resources,
+            profiles=profiles,
+            ranked_candidates=ranked,
+            density_mode=density_mode,
+            density_multiplier=density_multiplier,
+            seed=int(args.resource_seed),
+            fairness_mode=bool(args.resource_fairness),
+        )
+        resource_payload = {
+            tile_index: (placed.resource, placed.amount)
+            for tile_index, placed in placement.placements_by_tile.items()
+        }
+        resource_summary = (
+            f"resources={len(resource_payload)} "
+            f"{summarize_resource_counts(placement, ruleset_resources)} "
+            f"density={density_mode}x{density_multiplier:g} "
+            f"seed={args.resource_seed} fairness={bool(args.resource_fairness)}"
+        )
+
     payload = build_map_payload(
         topology=topology,
         tiles=tiles,
@@ -380,6 +532,7 @@ def main() -> int:
         map_name=args.name,
         river_edges=river_projection.edges,
         size_name=args.size,
+        resources=resource_payload,
     )
 
     output_path = Path(args.output)
@@ -392,7 +545,7 @@ def main() -> int:
         f"Wrote map to {output_path} | tiles={len(tiles)} land={land} water={water} mountains={mountains} "
         f"frequency={topology.frequency} rivers={len(river_projection.edges)} selectedRivers={len(river_projection.selected_lines)} "
         f"lonOffset={alignment.longitude_offset_deg} flipLat={alignment.flip_latitude} flipLon={alignment.flip_longitude} "
-        f"poleAlign={args.pole_alignment}"
+        f"poleAlign={args.pole_alignment} {resource_summary}"
     )
     if river_projection.skipped_segments:
         print(f"Warning: skipped {river_projection.skipped_segments} river segments that could not be projected")

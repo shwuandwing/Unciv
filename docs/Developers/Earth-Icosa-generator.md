@@ -14,9 +14,12 @@ v1 targets:
   - Vegetation (`Forest`, `Jungle`, `Marsh`)
   - Polar `Ice`
   - Rivers: top `N` longest river lines (default `20`)
-- Excluded in v1:
-  - Strategic/luxury/bonus resource placement
-  - Gameplay balancing passes
+- Included in v1.1:
+  - Resource placement (Bonus/Luxury/Strategic) for Civ V - Gods & Kings
+  - Deterministic resource generation by seed
+  - Strategic deposit amounts (`resourceAmount`) persisted to map output
+- Optional:
+  - Fairness pass to reduce strategic starvation (`--resource-fairness`)
 
 ## Data Sources
 
@@ -103,6 +106,13 @@ Default orientation/alignment behavior:
 These defaults are chosen so Earth north/south and east/west orientation matches Unciv's current icosa net presentation without extra flags.
 For current core builds, `topology` already uses the net-derived north axis (top-center to bottom-center in the unfolded net), so `map-centered` is mainly a debugging/comparison mode.
 
+Resource behavior defaults:
+
+- Resources are enabled by default
+- Resource density defaults to `default`
+- Resource seed defaults to `1337`
+- Profile defaults to `tools/earthgen/resource_profiles_gnk.yaml`
+
 ## Size/Frequency behavior
 
 Predefined mapping:
@@ -123,6 +133,11 @@ You can override the defaults when debugging or comparing projections:
 - `--flip-longitude`
 - `--longitude-offset <degrees>`
 - `--pole-alignment topology|map-centered`
+- `--disable-resources`
+- `--resource-density sparse|default|abundant|<multiplier>`
+- `--resource-seed <int>`
+- `--disable-resource <name>` (repeatable)
+- `--resource-fairness|--no-resource-fairness`
 
 Example:
 
@@ -159,6 +174,10 @@ Current suite validates:
 - Topology schema + canonical edge-writer mapping
 - Terrain rule snapshots + invalid-combination guards
 - River projection integrity (neighbor edges, continuity, serialization fields)
+- Resource profile/ruleset contract integrity
+- Resource suitability layer construction
+- Resource scoring hard filters
+- Resource placement overlap + strategic amount constraints
 - Size/frequency mapping and generated tile-count checks
 
 ## Troubleshooting
@@ -173,3 +192,7 @@ Current suite validates:
   - Confirm output path is under `android/assets/maps/` or imported into user map directory.
 - Ocean tiles unexpectedly becoming land/desert near map seams:
   - Ensure you're on a revision including antimeridian polygon unwrapping in `dataset_sampling.py`.
+- Resource profile validation errors:
+  - Ensure profile contains one entry per G&K resource and no unknown resource names.
+- Strategic resource count too low for a specific run:
+  - Try `--resource-density abundant` and/or enable `--resource-fairness`.

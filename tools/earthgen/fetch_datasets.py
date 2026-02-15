@@ -51,6 +51,21 @@ DEFAULT_DATASETS: Dict[str, Dict[str, str]] = {
         "filename": "wc2.1_10m_prec.zip",
         "description": "WorldClim 2.1 monthly precipitation raster (10m)",
     },
+    "geography_regions_polys": {
+        "url": "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_geography_regions_polys.json",
+        "filename": "ne_110m_geography_regions_polys.json",
+        "description": "Natural Earth 110m geography regions polygons (resource macro-belt hints)",
+    },
+    "geography_regions_points": {
+        "url": "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_geography_regions_points.json",
+        "filename": "ne_110m_geography_regions_points.json",
+        "description": "Natural Earth 110m geography regions points (resource priors)",
+    },
+    "geography_regions_elevation_points": {
+        "url": "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_geography_regions_elevation_points.json",
+        "filename": "ne_110m_geography_regions_elevation_points.json",
+        "description": "Natural Earth 110m geography elevation points (resource geology proxy)",
+    },
 }
 
 
