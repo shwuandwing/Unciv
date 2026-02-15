@@ -132,16 +132,24 @@ class Minimap(val mapHolder: WorldMapHolder, minimapSize: Int, private val civIn
         // Support rectangular maps with extreme aspect ratios by scaling to the larger coordinate with a slight weighting to make the bounding box 4:3
         val effectiveRadius =
                 with(mapHolder.tileMap.mapParameters) {
-                    if (shape != MapShape.rectangular) mapSize.radius
-                    else max(
-                        mapSize.height,
-                        mapSize.width * 3 / 4
-                    ) * MapSize.Huge.radius / MapSize.Huge.height
+                    when (shape) {
+                        MapShape.icosahedron -> {
+                            val bounds = getRenderBounds(mapHolder.tileMap.topology.getWorldBounds())
+                            // Keep icosa minimap size proportional to render bounds (same basis as calcMinimapSize).
+                            max(bounds.width + 1f, bounds.height + 1f) * 0.5f
+                        }
+                        MapShape.rectangular -> max(
+                            mapSize.height,
+                            mapSize.width * 3 / 4
+                        ).toFloat() * MapSize.Huge.radius.toFloat() / MapSize.Huge.height.toFloat()
+                        else -> mapSize.radius.toFloat()
+                    }
                 }
 
         val mapSizePercent = if (minimapSize < 22) minimapSize + 9 else minimapSize * 5 - 75
         val smallerWorldDimension = mapHolder.worldScreen.stage.let { min(it.width, it.height) }
-        return smallerWorldDimension * mapSizePercent / 100 / effectiveRadius
+        val safeEffectiveRadius = max(1f, effectiveRadius)
+        return smallerWorldDimension * mapSizePercent / 100f / safeEffectiveRadius
     }
 
     /**
