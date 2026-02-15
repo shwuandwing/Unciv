@@ -117,6 +117,11 @@ class IcosaGlobeActor(
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
     private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
     init {
+        cameraController.setOrientationAxes(
+            cache.orientationBasis.northAxis,
+            cache.orientationBasis.meridianAxis,
+            cache.orientationBasis.eastAxis
+        )
         touchable = Touchable.enabled
         addListener(object : InputListener() {
             override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
@@ -175,6 +180,11 @@ class IcosaGlobeActor(
         if (latestMap === tileMap) return
         tileMap = latestMap
         cache = IcosaMeshRuntimeCache.from(tileMap)
+        cameraController.setOrientationAxes(
+            cache.orientationBasis.northAxis,
+            cache.orientationBasis.meridianAxis,
+            cache.orientationBasis.eastAxis
+        )
         tileSetStrings = TileSetStrings(
             requireNotNull(tileMap.ruleset) { "3D globe renderer requires tileMap.ruleset transients" },
             com.unciv.UncivGame.Current.settings
@@ -196,7 +206,12 @@ class IcosaGlobeActor(
     }
 
     fun resetToNorth() {
-        cameraController.resetToNorth()
+        val basis = cache.orientationBasis
+        cameraController.resetToNorth(
+            northAxis = basis.northAxis,
+            meridianAxis = basis.meridianAxis,
+            eastAxis = basis.eastAxis
+        )
     }
 
     fun zoomIn() {

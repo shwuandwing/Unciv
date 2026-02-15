@@ -141,6 +141,10 @@ Zoom controls:
 - 3D mode -> `GlobeCameraController` zoom
 - Keyboard `NUMPAD +/-` in world screen follows the same active-view routing.
 
+Reset-to-north controls:
+- 3D reset uses the icosa topology orientation basis (`GoldbergNetNorthAxis`) instead of fixed world `+Y`.
+- The orbit frame (`yaw/pitch`) and camera `up` vector are both axis-aware, so reset keeps net-north screen-up even when topology north differs from legacy mesh `+Y`.
+
 These are driven from the same `UnitMovement.getDistanceToTiles()` data used by 2D logic, so interaction reachability stays consistent between render modes.
 
 ### Test coverage

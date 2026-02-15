@@ -57,4 +57,32 @@ class GoldbergTopologyExportTests {
         val undirectedEdgeCountByNeighbors = dump.tiles.sumOf { it.neighbors.size } / 2
         Assert.assertEquals(undirectedEdgeCountByNeighbors, dump.edges.size)
     }
+
+    @Test
+    fun exportLatitudeLongitudeUseNetDerivedNorthAxis() {
+        val frequency = 4
+        val dump = GoldbergTopologyDumpBuilder.buildDump(frequency, basicRuleset())
+
+        val mesh = GoldbergMeshBuilder.build(frequency)
+        val layout = GoldbergNetLayoutBuilder.buildIndexToCoord(
+            frequency,
+            mesh,
+            GoldbergNetLayoutBuilder.DEFAULT_LAYOUT
+        )
+        val basis = GoldbergNetNorthAxis.buildBasis(mesh, layout.indexToCoord)
+
+        for (index in mesh.vertices.indices) {
+            val expectedLat = GoldbergNetNorthAxis.latitudeDegrees(mesh.vertices[index], basis)
+            val expectedLon = GoldbergNetNorthAxis.longitudeDegrees(mesh.vertices[index], basis)
+            Assert.assertEquals("Latitude mismatch at index $index", expectedLat, dump.tiles[index].latitude, 1e-3)
+            Assert.assertEquals("Longitude mismatch at index $index", expectedLon, dump.tiles[index].longitude, 1e-3)
+        }
+
+        val poleIndices = GoldbergNetNorthAxis.selectPoleTileIndices(layout.indexToCoord)
+        val topLat = dump.tiles[poleIndices.topCenterIndex].latitude
+        val bottomLat = dump.tiles[poleIndices.bottomCenterIndex].latitude
+        Assert.assertTrue("Top-center latitude should be positive", topLat > 0.0)
+        Assert.assertTrue("Bottom-center latitude should be negative", bottomLat < 0.0)
+        Assert.assertTrue("Top-center latitude should be greater than bottom-center latitude", topLat > bottomLat)
+    }
 }

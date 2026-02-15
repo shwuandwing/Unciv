@@ -328,7 +328,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pole-alignment",
         choices=("topology", "map-centered"),
-        default="map-centered",
+        default="topology",
         help="How to align Earth north/south poles on the unfolded icosa net",
     )
     parser.add_argument("--name", default="Earth-Icosahedron", help="Map name")

@@ -20,6 +20,13 @@ class GlobeCameraController(
     private val defaultYawDegrees = yawDegrees
     private val defaultPitchDegrees = pitchDegrees
     private val defaultDistance = distance
+    private val orientationNorth = Vector3.Y.cpy()
+    private val orientationMeridian = Vector3.X.cpy()
+    private val orientationEast = Vector3.Z.cpy()
+    private val tempForward = Vector3()
+    private val tempUp = Vector3()
+    private val tempProjection = Vector3()
+    private val tempPosition = Vector3()
 
     data class ViewState(
         val yawDegrees: Float,
@@ -40,21 +47,66 @@ class GlobeCameraController(
     fun centerOnDirection(direction: Vector3) {
         if (direction.isZero(0.0001f)) return
         val normalized = direction.cpy().nor()
-        yawDegrees = (MathUtils.radiansToDegrees * kotlin.math.atan2(normalized.z, normalized.x))
-        pitchDegrees = (MathUtils.radiansToDegrees * asin(normalized.y)).coerceIn(-85f, 85f)
+        val meridianComponent = normalized.dot(orientationMeridian)
+        val eastComponent = normalized.dot(orientationEast)
+        val northComponent = normalized.dot(orientationNorth)
+        yawDegrees = (MathUtils.radiansToDegrees * kotlin.math.atan2(eastComponent, meridianComponent))
+        pitchDegrees = (MathUtils.radiansToDegrees * asin(northComponent)).coerceIn(-85f, 85f)
+    }
+
+    fun setOrientationAxes(
+        northAxis: Vector3,
+        meridianAxis: Vector3,
+        eastAxis: Vector3
+    ) {
+        orientationNorth.set(northAxis)
+        if (orientationNorth.len2() <= 1e-8f) orientationNorth.set(Vector3.Y)
+        orientationNorth.nor()
+
+        orientationMeridian.set(meridianAxis)
+        projectToTangent(orientationMeridian, orientationNorth)
+        if (orientationMeridian.len2() <= 1e-8f) {
+            orientationMeridian.set(eastAxis)
+            projectToTangent(orientationMeridian, orientationNorth)
+        }
+        if (orientationMeridian.len2() <= 1e-8f) {
+            orientationMeridian.set(Vector3.X)
+            projectToTangent(orientationMeridian, orientationNorth)
+        }
+        if (orientationMeridian.len2() <= 1e-8f) {
+            orientationMeridian.set(Vector3.Z)
+            projectToTangent(orientationMeridian, orientationNorth)
+        }
+        orientationMeridian.nor()
+
+        orientationEast.set(orientationNorth).crs(orientationMeridian)
+        if (orientationEast.len2() <= 1e-8f) orientationEast.set(Vector3.Z)
+        orientationEast.nor()
+        orientationMeridian.set(orientationEast).crs(orientationNorth).nor()
     }
 
     fun applyTo(camera: PerspectiveCamera) {
         val yaw = MathUtils.degreesToRadians * yawDegrees
         val pitch = MathUtils.degreesToRadians * pitchDegrees
-        val horizontal = distance * cos(pitch)
+        val horizontal = cos(pitch)
+        val meridianComponent = (horizontal * cos(yaw)).toFloat()
+        val northComponent = sin(pitch).toFloat()
+        val eastComponent = (horizontal * sin(yaw)).toFloat()
 
-        val x = horizontal * cos(yaw)
-        val y = distance * sin(pitch)
-        val z = horizontal * sin(yaw)
+        tempPosition.set(orientationMeridian).scl(meridianComponent)
+            .add(tempProjection.set(orientationNorth).scl(northComponent))
+            .add(tempProjection.set(orientationEast).scl(eastComponent))
+            .scl(distance)
 
-        camera.position.set(x.toFloat(), y.toFloat(), z.toFloat())
-        camera.up.set(Vector3.Y)
+        camera.position.set(tempPosition)
+
+        val forward = tempForward.set(camera.position).scl(-1f).nor()
+        tempUp.set(orientationNorth).sub(tempProjection.set(forward).scl(orientationNorth.dot(forward)))
+        if (tempUp.len2() <= 1e-8f) {
+            tempUp.set(orientationMeridian).sub(tempProjection.set(forward).scl(orientationMeridian.dot(forward)))
+        }
+        if (tempUp.len2() <= 1e-8f) tempUp.set(Vector3.Y)
+        camera.up.set(tempUp.nor())
         camera.lookAt(0f, 0f, 0f)
         camera.near = 0.1f
         camera.far = 30f
@@ -62,6 +114,17 @@ class GlobeCameraController(
     }
 
     fun resetToNorth() {
+        yawDegrees = defaultYawDegrees
+        pitchDegrees = defaultPitchDegrees
+        distance = defaultDistance
+    }
+
+    fun resetToNorth(
+        northAxis: Vector3,
+        meridianAxis: Vector3,
+        eastAxis: Vector3
+    ) {
+        setOrientationAxes(northAxis, meridianAxis, eastAxis)
         yawDegrees = defaultYawDegrees
         pitchDegrees = defaultPitchDegrees
         distance = defaultDistance
@@ -78,5 +141,9 @@ class GlobeCameraController(
         yawDegrees = state.yawDegrees
         pitchDegrees = state.pitchDegrees.coerceIn(-85f, 85f)
         distance = state.distance.coerceIn(minDistance, maxDistance)
+    }
+
+    private fun projectToTangent(vector: Vector3, normal: Vector3) {
+        vector.sub(tempProjection.set(normal).scl(vector.dot(normal)))
     }
 }
