@@ -4,6 +4,8 @@ import com.badlogic.gdx.math.Vector3
 import com.unciv.logic.map.GoldbergFrequency
 import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.TileMap
+import com.unciv.logic.map.topology.GoldbergNetLayoutBuilder
+import com.unciv.logic.map.topology.GoldbergNetNorthAxis
 import com.unciv.logic.map.topology.GoldbergMeshBuilder
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -12,7 +14,8 @@ class IcosaMeshRuntimeCache private constructor(
     val centers: Array<Vector3>,
     val normals: Array<Vector3>,
     val neighborRings: Array<IntArray>,
-    val cornerRings: Array<Array<Vector3>>
+    val cornerRings: Array<Array<Vector3>>,
+    val orientationBasis: GoldbergNetNorthAxis.Basis
 ) {
     companion object {
         fun from(tileMap: TileMap): IcosaMeshRuntimeCache {
@@ -24,6 +27,11 @@ class IcosaMeshRuntimeCache private constructor(
                 .takeIf { it > 0 }
                 ?: GoldbergFrequency.selectForMapSize(tileMap.mapParameters.mapSize)
             val mesh = GoldbergMeshBuilder.build(frequency)
+            val layoutId = tileMap.mapParameters.goldbergLayout
+                .takeIf { it.isNotBlank() }
+                ?: GoldbergNetLayoutBuilder.DEFAULT_LAYOUT
+            val layout = GoldbergNetLayoutBuilder.buildIndexToCoord(frequency, mesh, layoutId)
+            val orientationBasis = GoldbergNetNorthAxis.buildBasis(mesh, layout.indexToCoord)
             require(mesh.vertices.size == tileMap.tileList.size) {
                 "Goldberg mesh size mismatch: mesh=${mesh.vertices.size} tiles=${tileMap.tileList.size}"
             }
@@ -50,7 +58,7 @@ class IcosaMeshRuntimeCache private constructor(
                 }
             }
 
-            return IcosaMeshRuntimeCache(centers, normals, neighborRings, cornerRings)
+            return IcosaMeshRuntimeCache(centers, normals, neighborRings, cornerRings, orientationBasis)
         }
 
         private fun sortNeighborRing(index: Int, centers: Array<Vector3>, neighbors: IntArray): IntArray {

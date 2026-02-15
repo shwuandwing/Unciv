@@ -7,8 +7,6 @@ import com.unciv.logic.map.TileMap
 import com.unciv.logic.map.tile.Tile
 import yairm210.purity.annotations.LocalState
 import yairm210.purity.annotations.Readonly
-import kotlin.math.asin
-import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -44,15 +42,16 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
         var minY = Float.MAX_VALUE
         var maxX = -Float.MAX_VALUE
         var maxY = -Float.MAX_VALUE
+        val orientationBasis = GoldbergNetNorthAxis.buildBasis(mesh, layout.indexToCoord)
 
         for (i in mesh.vertices.indices) {
             val vec = mesh.vertices[i]
-            // Align climate latitude with the unfolded net's visual poles.
-            // GoldbergNetLayoutBuilder uses base-icosa vertex 0/3 as north/south, which lie on the Y axis.
-            val lat = asin(vec.y.toDouble())
-            val lon = atan2(vec.z.toDouble(), vec.x.toDouble())
-            latitudes[i] = (lat / Math.PI * 180.0 * 1000.0).roundToInt()
-            longitudes[i] = (lon / Math.PI * 180.0 * 1000.0).roundToInt()
+            // Align climate latitude/longitude with the unfolded net orientation
+            // (north = top-center tile toward bottom-center tile).
+            val lat = GoldbergNetNorthAxis.latitudeDegrees(vec, orientationBasis)
+            val lon = GoldbergNetNorthAxis.longitudeDegrees(vec, orientationBasis)
+            latitudes[i] = (lat * 1000.0).roundToInt()
+            longitudes[i] = (lon * 1000.0).roundToInt()
 
             val expectedCoord = layout.indexToCoord[i]
             val tile = tileMap.tileList[i]

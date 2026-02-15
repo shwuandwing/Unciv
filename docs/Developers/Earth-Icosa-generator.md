@@ -98,9 +98,10 @@ Default orientation/alignment behavior:
 
 - `--flip-latitude` default: enabled
 - `--flip-longitude` default: enabled
-- `--pole-alignment` default: `map-centered`
+- `--pole-alignment` default: `topology`
 
 These defaults are chosen so Earth north/south and east/west orientation matches Unciv's current icosa net presentation without extra flags.
+For current core builds, `topology` already uses the net-derived north axis (top-center to bottom-center in the unfolded net), so `map-centered` is mainly a debugging/comparison mode.
 
 ## Size/Frequency behavior
 
