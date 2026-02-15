@@ -322,8 +322,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--flip-longitude",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Mirror longitude sign before sampling Earth datasets (default: enabled)",
+        default=False,
+        help="Mirror longitude sign before sampling Earth datasets (default: disabled)",
     )
     parser.add_argument(
         "--pole-alignment",

@@ -12,4 +12,4 @@ def test_generate_cli_defaults_include_topology_pole_alignment(monkeypatch):
     args = generate_unciv_earth_map.parse_args()
     assert args.pole_alignment == "topology"
     assert args.flip_latitude is True
-    assert args.flip_longitude is True
+    assert args.flip_longitude is False

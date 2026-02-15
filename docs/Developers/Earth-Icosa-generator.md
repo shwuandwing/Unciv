@@ -97,7 +97,7 @@ Expected output summary:
 Default orientation/alignment behavior:
 
 - `--flip-latitude` default: enabled
-- `--flip-longitude` default: enabled
+- `--flip-longitude` default: disabled
 - `--pole-alignment` default: `topology`
 
 These defaults are chosen so Earth north/south and east/west orientation matches Unciv's current icosa net presentation without extra flags.
@@ -120,7 +120,7 @@ Predefined mapping:
 You can override the defaults when debugging or comparing projections:
 
 - `--no-flip-latitude`
-- `--no-flip-longitude`
+- `--flip-longitude`
 - `--longitude-offset <degrees>`
 - `--pole-alignment topology|map-centered`
 
