@@ -13,6 +13,7 @@ def test_generate_cli_defaults_include_topology_pole_alignment(monkeypatch):
     assert args.pole_alignment == "topology"
     assert args.flip_latitude is True
     assert args.flip_longitude is False
+    assert args.auto_generate_topology is True
     assert args.enable_resources is True
     assert args.resource_density == "default"
     assert args.resource_seed == 1337
@@ -31,3 +32,18 @@ def test_generate_cli_accepts_disable_resources_flag(monkeypatch):
     )
     args = generate_unciv_earth_map.parse_args()
     assert args.enable_resources is False
+
+
+def test_generate_cli_can_disable_topology_auto_generation(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_unciv_earth_map.py",
+            "--output",
+            "android/assets/maps/Earth-Icosa-Test",
+            "--no-auto-generate-topology",
+        ],
+    )
+    args = generate_unciv_earth_map.parse_args()
+    assert args.auto_generate_topology is False

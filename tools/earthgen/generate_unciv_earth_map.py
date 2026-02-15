@@ -3,14 +3,18 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 # Allow running as a script from repository root without `-m`.
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(REPO_ROOT))
 
 from tools.earthgen.dataset_sampling import EarthDatasets, load_earth_datasets
 from tools.earthgen.river_projection import CanonicalEdge, project_river_lines_to_edges
@@ -179,6 +183,44 @@ def resolve_topology_path(topology_arg: str | None, cache_dir: Path, frequency: 
     return cache_dir / f"topology_f{frequency}.json"
 
 
+def ensure_topology_dump(topology_path: Path, frequency: int, auto_generate: bool) -> None:
+    if topology_path.exists():
+        return
+
+    if not auto_generate:
+        raise FileNotFoundError(
+            f"Topology dump not found: {topology_path}. "
+            "Generate one with: ./gradlew -q :desktop:run "
+            "--args=\"--dump-icosa-topology=<path> --frequency=<f>\""
+        )
+
+    gradlew_path = REPO_ROOT / "gradlew"
+    if not gradlew_path.exists():
+        raise FileNotFoundError(
+            f"Topology dump not found: {topology_path} and gradle wrapper not found at {gradlew_path}. "
+            "Provide --topology, create the dump manually, or run from a full repo checkout."
+        )
+
+    topology_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_topology_path = topology_path.resolve()
+    print(f"Topology dump not found. Auto-generating at {abs_topology_path} (frequency={frequency})")
+
+    cmd = [
+        str(gradlew_path),
+        "-q",
+        ":desktop:run",
+        f"--args=--dump-icosa-topology={abs_topology_path} --frequency={frequency}",
+    ]
+    try:
+        subprocess.run(cmd, cwd=str(REPO_ROOT), env=dict(os.environ), check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "Failed to auto-generate topology dump via gradle. "
+            "Try generating manually with ./gradlew -q :desktop:run "
+            "--args=\"--dump-icosa-topology=<path> --frequency=<f>\""
+        ) from exc
+
+
 def load_generation_topology(topology_path: Path, expected_frequency: int | None) -> TopologyDump:
     if not topology_path.exists():
         raise FileNotFoundError(
@@ -334,6 +376,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ruleset", default="Civ V - Gods & Kings", help="Ruleset name written into mapParameters")
     parser.add_argument("--size", choices=tuple(PREDEFINED_SIZE_TO_FREQUENCY.keys()), default=None)
     parser.add_argument("--frequency", type=int, default=None, help="Custom frequency; overrides --size")
+    parser.add_argument(
+        "--auto-generate-topology",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Auto-generate missing topology dump via gradle (default: enabled)",
+    )
     parser.add_argument("--river-count", type=int, default=20, help="Number of longest rivers to project")
     resource_toggle = parser.add_mutually_exclusive_group()
     resource_toggle.add_argument(
@@ -444,6 +492,11 @@ def main() -> int:
 
     requested_frequency = resolve_generation_frequency(args.size, args.frequency, None)
     topology_path = resolve_topology_path(args.topology, cache_dir, requested_frequency)
+    ensure_topology_dump(
+        topology_path=topology_path,
+        frequency=requested_frequency,
+        auto_generate=bool(args.auto_generate_topology),
+    )
     topology = load_generation_topology(topology_path, requested_frequency)
 
     alignment = EarthAlignment(
