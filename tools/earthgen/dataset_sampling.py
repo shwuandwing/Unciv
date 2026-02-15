@@ -14,6 +14,9 @@ import tifffile
 
 logging.getLogger("tifffile").setLevel(logging.ERROR)
 
+WORLDCLIM_INT16_NODATA_CUTOFF = -30000.0
+KNOWN_NODATA_SENTINELS = (-32768.0, -9999.0)
+
 
 def wrap_longitude(lon: float) -> float:
     while lon < -180.0:
@@ -128,6 +131,11 @@ class GeoRaster:
             return None
         # WorldClim rasters often use extreme sentinels (~-3.4e38) for nodata.
         if abs(value) > 1e20:
+            return None
+        # Some rasters are stored as int16 with nodata=-32768 (or similar negative sentinels).
+        if value <= WORLDCLIM_INT16_NODATA_CUTOFF:
+            return None
+        if any(math.isclose(value, nodata, rel_tol=0.0, abs_tol=1e-6) for nodata in KNOWN_NODATA_SENTINELS):
             return None
         if self.nodata is not None and math.isclose(value, self.nodata, rel_tol=0.0, abs_tol=1e-6):
             return None
