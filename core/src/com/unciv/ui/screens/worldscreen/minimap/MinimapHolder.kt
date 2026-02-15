@@ -154,8 +154,7 @@ class MinimapHolder(val mapHolder: WorldMapHolder) : Table() {
         }
     }
 
-    private fun shouldShowMapButtons() = minimapSize > 0 &&
-        (minimap.width > 100f || minimap.height > 100f)
+    private fun shouldShowMapButtons() = minimap.width > 100f || minimap.height > 100f
 
     private fun getWrappedMinimap(): Table {
         val internalMinimapWrapper = Table()
