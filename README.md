@@ -7,9 +7,9 @@
 This is a fork of [Unciv](https://github.com/yairm210/Unciv/).  The goal is to see what a 4X turn based strategy game feels like with spherical based tiling.  In this case, the tiling is on a 
 [goldberg polyhedra - class 1](https://en.wikipedia.org/wiki/Goldberg_polyhedron) based on an isocahedron.
 
-## Is this any good?
+## Features of icosahedron / spherical tiling.
 
-On the icosahedron map, Unciv plays as it should.  Units movement works, there is a 3d view, and a [2d view](/extraImages/Screenshots/2DIcosahedron.png) of the icosahedron that is unwrapped.
+On the icosahedron map, Unciv plays as it should.  Units movement works, there is a 3d view, and a [2d view](/extraImages/Screenshots/2DIcosahedron.png) of the icosahedron that is unwrapped. There is also a [tool](/tools/earthgen/README.md) which can generate maps based on the earth up to any size.
 
 ## How do I install?
 
@@ -17,9 +17,7 @@ On the icosahedron map, Unciv plays as it should.  Units movement works, there i
 
 ## What's the roadmap?
 
-In this order:
-
-* Try to make a map based on the Earth
+* Nothing right now.  
 
 ## Contributing
 
