@@ -43,7 +43,7 @@ class GoldbergNetNorthAxisTests {
                 GoldbergNetLayoutBuilder.DEFAULT_LAYOUT
             )
 
-            val basis = GoldbergNetNorthAxis.buildBasis(mesh, layout.indexToCoord)
+            val basis = GoldbergNetNorthAxis.buildBasis(mesh, layout)
             basisByFrequency += basis.northAxis.cpy()
 
             Assert.assertEquals(1f, basis.northAxis.len(), 1e-5f)

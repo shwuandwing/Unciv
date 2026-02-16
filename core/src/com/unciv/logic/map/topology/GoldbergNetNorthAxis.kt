@@ -79,13 +79,22 @@ object GoldbergNetNorthAxis {
 
     fun buildBasis(
         mesh: GoldbergMeshBuilder.GoldbergMesh,
+        layout: GoldbergNetLayoutBuilder.LayoutResult
+    ): Basis = buildBasis(mesh, layout.indexToCoord, layout.poleTileIndices)
+
+    fun buildBasis(
+        mesh: GoldbergMeshBuilder.GoldbergMesh,
         indexToCoord: List<HexCoord>
+    ): Basis = buildBasis(mesh, indexToCoord, selectPoleTileIndices(indexToCoord))
+
+    private fun buildBasis(
+        mesh: GoldbergMeshBuilder.GoldbergMesh,
+        indexToCoord: List<HexCoord>,
+        poles: PoleTileIndices
     ): Basis {
         require(mesh.vertices.size == indexToCoord.size) {
             "Mesh/layout size mismatch: mesh=${mesh.vertices.size} coords=${indexToCoord.size}"
         }
-
-        val poles = selectPoleTileIndices(indexToCoord)
         val top = mesh.vertices[poles.topCenterIndex].cpy().nor()
         val bottom = mesh.vertices[poles.bottomCenterIndex].cpy().nor()
 

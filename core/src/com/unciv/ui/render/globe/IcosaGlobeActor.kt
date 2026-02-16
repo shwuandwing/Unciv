@@ -41,8 +41,9 @@ import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.random.Random
 
 class IcosaGlobeActor(
     private val tileMapProvider: () -> com.unciv.logic.map.TileMap,
@@ -113,8 +114,10 @@ class IcosaGlobeActor(
     private val tempStage = Vector2()
     private val cameraDirectionFromOrigin = Vector3()
     private val overlayTrianglesByVertexCount = HashMap<Int, ShortArray>()
+    private val mappedOverlayVerticesByVertexCount = HashMap<Int, FloatArray>()
     private val unexploredTileColor = Color(0.03f, 0.05f, 0.11f, 1f)
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
+    private val overlayVariantLocationsCache = HashMap<String, List<String>>()
     private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
     init {
         cameraController.setOrientationAxes(
@@ -190,6 +193,7 @@ class IcosaGlobeActor(
             com.unciv.UncivGame.Current.settings
         )
         overlayRegionCache.clear()
+        overlayVariantLocationsCache.clear()
         selectedTileIndex = -1
         hoveredTileIndex = -1
 
@@ -300,7 +304,6 @@ class IcosaGlobeActor(
         for (tile in tileMap.tileList) {
             val index = tile.zeroBasedIndex
             projectedVisible[index] = false
-            projectedPolygons[index] = null
             projectedFacing[index] = 0f
             projectedOverlayRotations[index] = 0f
             projectedDirectionalOverlayRotations[index] = 0f
@@ -310,29 +313,30 @@ class IcosaGlobeActor(
 
             val centerDirection = cache.centers[index]
             val facing = centerDirection.dot(cameraDirectionFromOrigin)
-            if (facing <= 0.05f) continue
+            if (facing <= 0.05f) {
+                // Clear stale screen-space polygon when tile moves to the back side of the globe.
+                projectedPolygons[index] = null
+                continue
+            }
 
-            val centerWorld = IcosaProjection.projectToSphere(centerDirection, 1f)
-            projectToStage(centerWorld, projectedCenters[index])
-            projectedDistances[index] = camera.position.dst2(centerWorld)
+            projectToStage(centerDirection, projectedCenters[index])
+            projectedDistances[index] = camera.position.dst2(centerDirection)
             projectedFacing[index] = facing
-            val northDirection = GlobeOverlayOrientation.localNorthOffsetDirection(centerDirection)
-            val northWorld = IcosaProjection.projectToSphere(northDirection, 1f)
-            projectToStage(northWorld, tempStage)
+            projectToStage(cache.localNorthOffsets[index], tempStage)
             val northDx = tempStage.x - projectedCenters[index].x
             val northDy = tempStage.y - projectedCenters[index].y
             val localNorthRotation = GlobeOverlayOrientation.screenRotationDegrees(projectedCenters[index], tempStage)
 
             val corners = cache.cornerRings[index]
-            val polygon = FloatArray(corners.size * 2)
+            val polygon = projectedPolygons[index]
+                ?.takeIf { it.size == corners.size * 2 }
+                ?: FloatArray(corners.size * 2).also { projectedPolygons[index] = it }
             for (cornerIndex in corners.indices) {
-                val cornerWorld = IcosaProjection.projectToSphere(corners[cornerIndex], 1f)
-                projectToStage(cornerWorld, tempStage)
+                projectToStage(corners[cornerIndex], tempStage)
                 polygon[cornerIndex * 2] = tempStage.x
                 polygon[cornerIndex * 2 + 1] = tempStage.y
             }
 
-            projectedPolygons[index] = polygon
             val regularBaseRotation = if (northDx * northDx + northDy * northDy > 1e-6f) {
                 GlobeOverlayOrientation.screenRotationFromPolygonNearestTo(
                     center = projectedCenters[index],
@@ -1333,7 +1337,7 @@ class IcosaGlobeActor(
             if (roadStatus == RoadStatus.None) continue
 
             val location = tileSetStrings.orFallback { roadsMap[roadStatus]!! }
-            val drawable = ImageGetter.getDrawableOrNull(location) ?: continue
+            val region = getRegion(location) ?: continue
             val neighborCenter = projectedCenters[neighborIndex]
 
             val dx = neighborCenter.x - center.x
@@ -1345,7 +1349,7 @@ class IcosaGlobeActor(
             val angle = (atan2(dy, dx) * 180f / Math.PI).toFloat()
             drawRotatedRegion(
                 batch = batch,
-                region = drawable.region,
+                region = region,
                 x = center.x,
                 y = center.y - roadThickness / 2f,
                 width = roadLength,
@@ -1441,10 +1445,13 @@ class IcosaGlobeActor(
         tintColor: Color = Color.WHITE
     ) {
         val location = chooseVariant(overlay.location, tile) ?: return
-        val region = ImageGetter.getDrawable(location).region
+        val region = getRegion(location) ?: return
         val vertexCount = polygon.size / 2
         val triangles = overlayTrianglesByVertexCount.getOrPut(vertexCount) {
             GlobeOverlayPolygonMapping.triangleFan(vertexCount)
+        }
+        val mappedVertices = mappedOverlayVerticesByVertexCount.getOrPut(vertexCount) {
+            FloatArray(vertexCount * 5)
         }
         val packedColor = Color.toFloatBits(
             tintColor.r,
@@ -1466,25 +1473,24 @@ class IcosaGlobeActor(
         val vStart = vWindow.start
         val vEnd = vWindow.end
 
-        val mappedVertices = FloatArray(vertexCount * 5)
+        val angle = (-rotation * Math.PI / 180.0).toFloat()
+        val c = cos(angle)
+        val s = sin(angle)
         var out = 0
         for (i in 0 until vertexCount) {
             val x = polygon[i * 2]
             val y = polygon[i * 2 + 1]
-            val uv = GlobeOverlayPolygonMapping.uvForPoint(
-                pointX = x,
-                pointY = y,
-                frameCenterX = frameCenterX,
-                frameCenterY = frameCenterY,
-                frameWidth = frameWidth,
-                frameHeight = frameHeight,
-                rotationDegrees = rotation
-            )
+            val dx = x - frameCenterX
+            val dy = y - frameCenterY
+            val localX = dx * c - dy * s
+            val localY = dx * s + dy * c
+            val u = (localX / frameWidth + 0.5f).coerceIn(0f, 1f)
+            val v = (localY / frameHeight + 0.5f).coerceIn(0f, 1f)
             mappedVertices[out++] = x
             mappedVertices[out++] = y
             mappedVertices[out++] = packedColor
-            mappedVertices[out++] = uStart + (uEnd - uStart) * uv.x
-            mappedVertices[out++] = vStart + (vEnd - vStart) * uv.y
+            mappedVertices[out++] = uStart + (uEnd - uStart) * u
+            mappedVertices[out++] = vStart + (vEnd - vStart) * v
         }
 
         polygonBatch.draw(
@@ -1499,15 +1505,21 @@ class IcosaGlobeActor(
     }
 
     private fun chooseVariant(baseLocation: String, tile: Tile): String? {
-        if (!ImageGetter.imageExists(baseLocation)) return null
-        val available = ArrayList<String>()
-        available += baseLocation
-        var i = 2
-        while (ImageGetter.imageExists("$baseLocation$i")) {
-            available += "$baseLocation$i"
-            i++
+        val available = overlayVariantLocationsCache.getOrPut(baseLocation) {
+            if (!ImageGetter.imageExists(baseLocation)) return@getOrPut emptyList()
+            val variants = ArrayList<String>()
+            variants += baseLocation
+            var suffix = 2
+            while (ImageGetter.imageExists("$baseLocation$suffix")) {
+                variants += "$baseLocation$suffix"
+                suffix++
+            }
+            variants
         }
-        return available.random(Random(tile.position.hashCode() + baseLocation.hashCode()))
+        if (available.isEmpty()) return null
+        val seed = 31 * tile.position.hashCode() + baseLocation.hashCode()
+        val index = ((seed % available.size) + available.size) % available.size
+        return available[index]
     }
 
     private fun getCenterOverlayLocations(
@@ -1590,8 +1602,7 @@ class IcosaGlobeActor(
             val neighborPoint = if (projectedVisible[neighbor.zeroBasedIndex]) {
                 projectedCenters[neighbor.zeroBasedIndex].cpy()
             } else {
-                val neighborWorld = IcosaProjection.projectToSphere(cache.centers[neighbor.zeroBasedIndex], 1f)
-                projectToStage(neighborWorld, Vector2())
+                projectToStage(cache.centers[neighbor.zeroBasedIndex], Vector2())
             }
 
             val expectedDirection = tile.tileMap.getNeighborTilePositionAsWorldCoords(tile, neighbor)
