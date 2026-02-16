@@ -7,23 +7,23 @@ import com.unciv.logic.map.TileMap
 import com.unciv.logic.map.tile.Tile
 import yairm210.purity.annotations.LocalState
 import yairm210.purity.annotations.Readonly
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: String) : MapTopology {
 
-    private val mesh = GoldbergMeshBuilder.build(frequency)
-    private val layout = GoldbergNetLayoutBuilder.buildIndexToCoord(frequency, mesh, layoutId)
+    private val geometry = GoldbergGeometryBundleCache.get(frequency, layoutId)
+    private val mesh = geometry.mesh
+    private val layout = geometry.layout
 
-    private val latitudes: IntArray
-    private val longitudes: IntArray
+    private val latitudes: IntArray = geometry.latitudes
+    private val longitudes: IntArray = geometry.longitudes
     private val worldPositions: Array<Vector2>
     private val worldBounds: Rectangle
     private val maxEdgeChord = mesh.edgeMaxChord
 
-    private val seamEdges: Array<MutableSet<Int>>
-    private val primaryFaceByIndex: IntArray
-    private val faceLabelTileByFace: IntArray
+    private val seamEdges: Array<IntArray> = geometry.seamEdges
+    private val primaryFaceByIndex: IntArray = geometry.primaryFaceByIndex
+    private val faceLabelTileByFace: IntArray = geometry.faceLabelTileByFace
 
     init {
         val tileCount = tileMap.tileList.size
@@ -31,28 +31,14 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
             "Goldberg tile count mismatch: tiles=$tileCount mesh=${mesh.vertices.size}"
         }
 
-        latitudes = IntArray(mesh.vertices.size)
-        longitudes = IntArray(mesh.vertices.size)
         worldPositions = Array(mesh.vertices.size) { Vector2() }
-        seamEdges = Array(mesh.vertices.size) { LinkedHashSet() }
-        primaryFaceByIndex = IntArray(mesh.vertices.size)
-        faceLabelTileByFace = IntArray(mesh.faces.size) { -1 }
 
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
         var maxX = -Float.MAX_VALUE
         var maxY = -Float.MAX_VALUE
-        val orientationBasis = GoldbergNetNorthAxis.buildBasis(mesh, layout.indexToCoord)
 
         for (i in mesh.vertices.indices) {
-            val vec = mesh.vertices[i]
-            // Align climate latitude/longitude with the unfolded net orientation
-            // (north = top-center tile toward bottom-center tile).
-            val lat = GoldbergNetNorthAxis.latitudeDegrees(vec, orientationBasis)
-            val lon = GoldbergNetNorthAxis.longitudeDegrees(vec, orientationBasis)
-            latitudes[i] = (lat * 1000.0).roundToInt()
-            longitudes[i] = (lon * 1000.0).roundToInt()
-
             val expectedCoord = layout.indexToCoord[i]
             val tile = tileMap.tileList[i]
             if (tile.position != expectedCoord) {
@@ -68,22 +54,6 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
         }
 
         worldBounds = Rectangle(minX, minY, maxX - minX, maxY - minY)
-
-        for (i in mesh.neighbors.indices) {
-            val pos = layout.indexToCoord[i]
-            for (n in mesh.neighbors[i]) {
-                val dist = HexMath.getDistance(pos, layout.indexToCoord[n])
-                if (dist > 1) {
-                    seamEdges[i].add(n)
-                }
-            }
-        }
-
-        for (i in mesh.vertexFaces.indices) {
-            val faces = mesh.vertexFaces[i]
-            primaryFaceByIndex[i] = faces.minOrNull() ?: -1
-        }
-        computeFaceLabelTiles()
     }
 
     override fun getNeighbors(tile: Tile): Sequence<Tile> = sequence {
@@ -147,7 +117,12 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
 
     override fun isSeamEdge(from: Tile, to: Tile): Boolean {
         val idx = from.zeroBasedIndex
-        return seamEdges[idx].contains(to.zeroBasedIndex)
+        @LocalState val seams = seamEdges[idx]
+        val neighbor = to.zeroBasedIndex
+        for (i in seams.indices) {
+            if (seams[i] == neighbor) return true
+        }
+        return false
     }
 
     override fun getClosestTile(worldPos: Vector2): Tile? {
@@ -241,48 +216,5 @@ class GoldbergTopology(private val tileMap: TileMap, frequency: Int, layoutId: S
             }
         }
         return ring
-    }
-
-    private fun computeFaceLabelTiles() {
-        for (face in mesh.faces.indices) {
-            val candidates = ArrayList<Int>()
-            for (index in primaryFaceByIndex.indices) {
-                if (primaryFaceByIndex[index] == face) candidates.add(index)
-            }
-            if (candidates.isEmpty()) continue
-
-            var centerX = 0f
-            var centerY = 0f
-            for (index in candidates) {
-                val pos = worldPositions[index]
-                centerX += pos.x
-                centerY += pos.y
-            }
-            centerX /= candidates.size
-            centerY /= candidates.size
-
-            var bestIndex = candidates.first()
-            var bestSameFaceNeighbors = -1
-            var bestCenterDist = Float.MAX_VALUE
-            for (index in candidates) {
-                var sameFaceNeighbors = 0
-                for (neighbor in mesh.neighbors[index]) {
-                    if (primaryFaceByIndex[neighbor] == face) sameFaceNeighbors++
-                }
-                val pos = worldPositions[index]
-                val dx = pos.x - centerX
-                val dy = pos.y - centerY
-                val centerDist = dx * dx + dy * dy
-                if (sameFaceNeighbors > bestSameFaceNeighbors ||
-                    (sameFaceNeighbors == bestSameFaceNeighbors && centerDist < bestCenterDist) ||
-                    (sameFaceNeighbors == bestSameFaceNeighbors && centerDist == bestCenterDist && index < bestIndex)
-                ) {
-                    bestIndex = index
-                    bestSameFaceNeighbors = sameFaceNeighbors
-                    bestCenterDist = centerDist
-                }
-            }
-            faceLabelTileByFace[face] = bestIndex
-        }
     }
 }

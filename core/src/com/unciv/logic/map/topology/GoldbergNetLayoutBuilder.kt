@@ -9,7 +9,11 @@ object GoldbergNetLayoutBuilder {
     data class LayoutResult(
         val indexToCoord: List<HexCoord>,
         val faceOrder: List<Int>
-    )
+    ) {
+        val poleTileIndices: GoldbergNetNorthAxis.PoleTileIndices by lazy(LazyThreadSafetyMode.NONE) {
+            GoldbergNetNorthAxis.selectPoleTileIndices(indexToCoord)
+        }
+    }
 
     private data class FaceAdjacency(val otherFace: Int, val shared: IntArray)
 

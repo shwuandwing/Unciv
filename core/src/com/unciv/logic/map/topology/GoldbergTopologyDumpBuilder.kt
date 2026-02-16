@@ -75,8 +75,9 @@ object GoldbergTopologyDumpBuilder {
             baseRuleset = BaseRuleset.Civ_V_GnK.fullName
         }
 
-        val mesh = GoldbergMeshBuilder.build(frequency)
-        val layout = GoldbergNetLayoutBuilder.buildIndexToCoord(frequency, mesh, layoutId)
+        val geometry = GoldbergGeometryBundleCache.get(frequency, layoutId)
+        val mesh = geometry.mesh
+        val layout = geometry.layout
 
         val tileMap = TileMap(mesh.vertices.size)
         tileMap.mapParameters = mapParameters
