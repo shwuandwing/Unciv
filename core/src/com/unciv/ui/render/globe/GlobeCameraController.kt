@@ -35,12 +35,18 @@ class GlobeCameraController(
     )
 
     fun rotateBy(deltaX: Float, deltaY: Float) {
-        yawDegrees -= deltaX * rotationSensitivity
-        pitchDegrees = (pitchDegrees + deltaY * rotationSensitivity).coerceIn(-85f, 85f)
+        val rotationScale = 0.85f + normalizedZoomDistance() * 0.35f
+        val effectiveSensitivity = rotationSensitivity * rotationScale
+        yawDegrees -= deltaX * effectiveSensitivity
+        pitchDegrees = (pitchDegrees + deltaY * effectiveSensitivity).coerceIn(-85f, 85f)
     }
 
     fun zoomBy(scrollAmountY: Float) {
-        val scale = 1f + scrollAmountY * zoomSensitivity
+        if (scrollAmountY == 0f) return
+        val normalizedScroll = scrollAmountY.coerceIn(-4f, 4f)
+        val zoomScale = 0.85f + normalizedZoomDistance() * 0.3f
+        val effectiveSensitivity = zoomSensitivity * zoomScale
+        val scale = (1f + normalizedScroll * effectiveSensitivity).coerceIn(0.78f, 1.24f)
         distance = (distance * scale).coerceIn(minDistance, maxDistance)
     }
 
@@ -141,6 +147,12 @@ class GlobeCameraController(
         yawDegrees = state.yawDegrees
         pitchDegrees = state.pitchDegrees.coerceIn(-85f, 85f)
         distance = state.distance.coerceIn(minDistance, maxDistance)
+    }
+
+    private fun normalizedZoomDistance(): Float {
+        val range = maxDistance - minDistance
+        if (range <= 1e-6f) return 0f
+        return ((distance - minDistance) / range).coerceIn(0f, 1f)
     }
 
     private fun projectToTangent(vector: Vector3, normal: Vector3) {

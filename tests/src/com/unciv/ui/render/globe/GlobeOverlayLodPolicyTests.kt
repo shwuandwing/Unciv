@@ -61,4 +61,46 @@ class GlobeOverlayLodPolicyTests {
         val center = GlobeOverlayLodPolicy.gridLineAlphaScale(0.6f)
         assertTrue("grid line alpha should be lower near limb", limb < center)
     }
+
+    @Test
+    fun markerScaleGrowsSlightlyWhenZoomedOut() {
+        val close = GlobeOverlayLodPolicy.markerScale(
+            frameWidth = 18f,
+            frameHeight = 17f,
+            facingDotCamera = 0.7f,
+            cameraDistance = 2.2f,
+            minDistance = 2.1f,
+            maxDistance = 8.5f
+        )
+        val far = GlobeOverlayLodPolicy.markerScale(
+            frameWidth = 18f,
+            frameHeight = 17f,
+            facingDotCamera = 0.7f,
+            cameraDistance = 8.4f,
+            minDistance = 2.1f,
+            maxDistance = 8.5f
+        )
+        assertTrue("marker scale should increase when zoomed out", far > close)
+    }
+
+    @Test
+    fun markerScaleShrinksForTinyLimbTiles() {
+        val center = GlobeOverlayLodPolicy.markerScale(
+            frameWidth = 16f,
+            frameHeight = 15f,
+            facingDotCamera = 0.75f,
+            cameraDistance = 5f,
+            minDistance = 2.1f,
+            maxDistance = 8.5f
+        )
+        val tinyLimb = GlobeOverlayLodPolicy.markerScale(
+            frameWidth = 5f,
+            frameHeight = 4.8f,
+            facingDotCamera = 0.08f,
+            cameraDistance = 5f,
+            minDistance = 2.1f,
+            maxDistance = 8.5f
+        )
+        assertTrue("marker scale should be lower for tiny limb tiles", tinyLimb < center)
+    }
 }

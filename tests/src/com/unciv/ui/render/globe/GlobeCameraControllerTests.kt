@@ -144,4 +144,48 @@ class GlobeCameraControllerTests {
         Assert.assertEquals("Direction aligned with east must map to +90 yaw", 90f, controller.yawDegrees, 0.0001f)
         Assert.assertEquals(0f, controller.pitchDegrees, 0.0001f)
     }
+
+    @Test
+    fun rotateByUsesHigherSensitivityWhenZoomedOut() {
+        val near = GlobeCameraController(
+            yawDegrees = 0f,
+            pitchDegrees = 0f,
+            distance = 2.2f,
+            minDistance = 2f,
+            maxDistance = 8f,
+            rotationSensitivity = 1f
+        )
+        val far = GlobeCameraController(
+            yawDegrees = 0f,
+            pitchDegrees = 0f,
+            distance = 7.8f,
+            minDistance = 2f,
+            maxDistance = 8f,
+            rotationSensitivity = 1f
+        )
+
+        near.rotateBy(deltaX = 10f, deltaY = 0f)
+        far.rotateBy(deltaX = 10f, deltaY = 0f)
+
+        Assert.assertTrue(
+            "Yaw delta should be larger when zoomed out for faster globe traversal",
+            kotlin.math.abs(far.yawDegrees) > kotlin.math.abs(near.yawDegrees)
+        )
+    }
+
+    @Test
+    fun zoomByLargeInputRemainsWithinBounds() {
+        val controller = GlobeCameraController(
+            yawDegrees = 0f,
+            pitchDegrees = 0f,
+            distance = 4f,
+            minDistance = 2f,
+            maxDistance = 5f
+        )
+
+        controller.zoomBy(scrollAmountY = -100f)
+        Assert.assertTrue("zoom in should clamp to minimum distance", controller.distance >= 2f)
+        controller.zoomBy(scrollAmountY = 100f)
+        Assert.assertTrue("zoom out should clamp to maximum distance", controller.distance <= 5f)
+    }
 }
