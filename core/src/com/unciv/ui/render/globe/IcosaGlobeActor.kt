@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.Disposable
+import com.badlogic.gdx.utils.TimeUtils
 import com.unciv.UncivGame
 import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
@@ -79,6 +80,26 @@ class IcosaGlobeActor(
         val drawAsCircle: Boolean
     )
 
+    private data class BorderOverlayCacheEntry(
+        val signature: Int,
+        val locations: List<String>
+    )
+
+    private data class TerrainDetailCacheEntry(
+        val signature: Int,
+        val locations: List<String>
+    )
+
+    private data class CenterOverlayCacheEntry(
+        val signature: Int,
+        val overlays: List<GlobeCenterOverlayPolicy.Overlay>
+    )
+
+    private data class OwnershipSegmentsCacheEntry(
+        val signature: Int,
+        val segments: List<OwnershipBorderSegmentResolver.Segment>
+    )
+
     private val shapeRenderer = ShapeRenderer()
     private val polygonBatch = PolygonSpriteBatch()
     private var tileMap = tileMapProvider()
@@ -119,6 +140,24 @@ class IcosaGlobeActor(
     private val overlayRegionCache = HashMap<String, TextureRegion?>()
     private val overlayVariantLocationsCache = HashMap<String, List<String>>()
     private val cityBannerHitBoxes = ArrayList<CityBannerHitBox>()
+
+    private var borderOverlayCache = arrayOfNulls<BorderOverlayCacheEntry>(tileMap.tileList.size)
+    private var terrainDetailCache = arrayOfNulls<TerrainDetailCacheEntry>(tileMap.tileList.size)
+    private var centerOverlayCache = arrayOfNulls<CenterOverlayCacheEntry>(tileMap.tileList.size)
+    private var ownershipSegmentsCache = arrayOfNulls<OwnershipSegmentsCacheEntry>(tileMap.tileList.size)
+
+    private var projectionInitialized = false
+    private var lastProjectionYawDegrees = 0f
+    private var lastProjectionPitchDegrees = 0f
+    private var lastProjectionDistance = 0f
+    private var lastProjectionViewportWidth = -1f
+    private var lastProjectionViewportHeight = -1f
+    private var lastProjectionVisibilitySignature = Int.MIN_VALUE
+    private var lastProjectionTimeMs = 0L
+
+    companion object {
+        private const val projectionStableRefreshIntervalMs = 80L
+    }
     init {
         cameraController.setOrientationAxes(
             cache.orientationBasis.northAxis,
@@ -194,6 +233,7 @@ class IcosaGlobeActor(
         )
         overlayRegionCache.clear()
         overlayVariantLocationsCache.clear()
+        projectionInitialized = false
         selectedTileIndex = -1
         hoveredTileIndex = -1
 
@@ -206,6 +246,10 @@ class IcosaGlobeActor(
         projectedDirectionalOverlayRotations = FloatArray(tileMap.tileList.size)
         projectedTileExplored = BooleanArray(tileMap.tileList.size)
         projectedTileVisible = BooleanArray(tileMap.tileList.size)
+        borderOverlayCache = arrayOfNulls(tileMap.tileList.size)
+        terrainDetailCache = arrayOfNulls(tileMap.tileList.size)
+        centerOverlayCache = arrayOfNulls(tileMap.tileList.size)
+        ownershipSegmentsCache = arrayOfNulls(tileMap.tileList.size)
         drawOrder.clear()
     }
 
@@ -292,14 +336,53 @@ class IcosaGlobeActor(
         batch.setColor(stageBatchColor)
     }
 
-    private fun projectTiles() {
-        drawOrder.clear()
+    private fun shouldReproject(visibilityContext: GlobeVisibilityPolicy.Context): Boolean {
+        val viewportWidth = camera.viewportWidth
+        val viewportHeight = camera.viewportHeight
+        val visibilitySignature = visibilityContextSignature(visibilityContext)
+        val now = TimeUtils.millis()
 
+        val cameraChanged = !projectionInitialized ||
+            kotlin.math.abs(cameraController.yawDegrees - lastProjectionYawDegrees) > 1e-4f ||
+            kotlin.math.abs(cameraController.pitchDegrees - lastProjectionPitchDegrees) > 1e-4f ||
+            kotlin.math.abs(cameraController.distance - lastProjectionDistance) > 1e-4f
+        val viewportChanged = !projectionInitialized ||
+            viewportWidth != lastProjectionViewportWidth ||
+            viewportHeight != lastProjectionViewportHeight
+        val visibilityChanged = !projectionInitialized ||
+            visibilitySignature != lastProjectionVisibilitySignature
+        val throttleExpired = !projectionInitialized ||
+            now - lastProjectionTimeMs >= projectionStableRefreshIntervalMs
+
+        val shouldReproject = cameraChanged || viewportChanged || visibilityChanged || throttleExpired
+        if (!shouldReproject) return false
+
+        lastProjectionYawDegrees = cameraController.yawDegrees
+        lastProjectionPitchDegrees = cameraController.pitchDegrees
+        lastProjectionDistance = cameraController.distance
+        lastProjectionViewportWidth = viewportWidth
+        lastProjectionViewportHeight = viewportHeight
+        lastProjectionVisibilitySignature = visibilitySignature
+        lastProjectionTimeMs = now
+        projectionInitialized = true
+        return true
+    }
+
+    private fun visibilityContextSignature(context: GlobeVisibilityPolicy.Context): Int {
+        var hash = if (context.fogOfWarEnabled) 1 else 0
+        hash = 31 * hash + (context.viewingCiv?.civID?.hashCode() ?: 0)
+        return hash
+    }
+
+    private fun projectTiles() {
         camera.viewportWidth = stage.viewport.screenWidth.toFloat()
         camera.viewportHeight = stage.viewport.screenHeight.toFloat()
         cameraController.applyTo(camera)
         cameraDirectionFromOrigin.set(camera.position).nor()
         val visibilityContext = visibilityContextProvider()
+        if (!shouldReproject(visibilityContext)) return
+
+        drawOrder.clear()
 
         for (tile in tileMap.tileList) {
             val index = tile.zeroBasedIndex
@@ -506,8 +589,14 @@ class IcosaGlobeActor(
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         shapeRenderer.color = Color(0.98f, 1f, 1f, 0.9f)
-        var previousCenter = projectedCenters[selectedUnit.currentTile.zeroBasedIndex]
+        val startIndex = selectedUnit.currentTile.zeroBasedIndex
+        if (!projectedVisible[startIndex]) {
+            shapeRenderer.end()
+            return
+        }
+        var previousCenter = projectedCenters[startIndex]
         for (tile in path) {
+            if (!projectedVisible[tile.zeroBasedIndex]) break
             val currentCenter = projectedCenters[tile.zeroBasedIndex]
             shapeRenderer.line(previousCenter.x, previousCenter.y, currentCenter.x, currentCenter.y)
             previousCenter = currentCenter
@@ -537,6 +626,14 @@ class IcosaGlobeActor(
         val center = projectedCenters[targetIndex]
         val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, projectedOverlayRotations[targetIndex])
         val detailSize = min(frame.width, frame.height)
+        val markerScale = GlobeOverlayLodPolicy.markerScale(
+            frameWidth = frame.width,
+            frameHeight = frame.height,
+            facingDotCamera = projectedFacing[targetIndex],
+            cameraDistance = cameraController.distance,
+            minDistance = cameraController.minDistance,
+            maxDistance = cameraController.maxDistance
+        )
         val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
             frameWidth = frame.width,
             frameHeight = frame.height,
@@ -550,12 +647,12 @@ class IcosaGlobeActor(
         ).apply {
             touchable = Touchable.disabled
         }
-        val targetSize = detailSize * 0.68f
+        val targetSize = detailSize * 0.68f * markerScale
         val scale = if (movePreviewWidget.width <= 0f) 1f else targetSize / movePreviewWidget.width
         movePreviewWidget.setScale(scale)
         movePreviewWidget.setPosition(
             center.x - movePreviewWidget.width * scale / 2f,
-            center.y + detailSize * 0.18f - movePreviewWidget.height * scale / 2f
+            center.y + detailSize * 0.18f * markerScale - movePreviewWidget.height * scale / 2f
         )
         movePreviewWidget.color.a = alpha
         batch.setColor(Color.WHITE)
@@ -579,7 +676,7 @@ class IcosaGlobeActor(
                 civInnerColor = owner.nation.getInnerColor()
             )
             val directionalBaseRotation = projectedDirectionalOverlayRotations[index]
-            val segments = OwnershipBorderSegmentResolver.resolve(tile)
+            val segments = getOwnershipBorderSegments(tile)
             if (segments.isEmpty()) continue
             for (segment in segments) {
                 val neighborIndex = segment.neighbor.zeroBasedIndex
@@ -680,6 +777,15 @@ class IcosaGlobeActor(
             val rotation = GlobeOverlaySpritePolicy.overlayRotationDegrees(projectedOverlayRotations[index])
             val frame = GlobeOverlayFramePolicy.fromPolygon(center, polygon, rotation)
             val detailSize = min(frame.width, frame.height)
+            val markerScale = GlobeOverlayLodPolicy.markerScale(
+                frameWidth = frame.width,
+                frameHeight = frame.height,
+                facingDotCamera = projectedFacing[index],
+                cameraDistance = cameraController.distance,
+                minDistance = cameraController.minDistance,
+                maxDistance = cameraController.maxDistance
+            )
+            val markerDetailSize = detailSize * markerScale
             val lodAlpha = GlobeOverlayLodPolicy.overlayAlpha(
                 frameWidth = frame.width,
                 frameHeight = frame.height,
@@ -689,17 +795,17 @@ class IcosaGlobeActor(
 
             val markerAlpha = parentAlpha * lodAlpha
             if (showTileYields) {
-                drawYieldMarkers(batch, tile, center, detailSize, markerAlpha, viewingCiv)
+                drawYieldMarkers(batch, tile, center, markerDetailSize, markerAlpha, viewingCiv)
             }
             if (showResourceAndImprovementIcons) {
-                drawResourceMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
-                drawImprovementMarker(batch, tile, center, detailSize, markerAlpha, viewingCiv)
+                drawResourceMarker(batch, tile, center, markerDetailSize, markerAlpha, viewingCiv)
+                drawImprovementMarker(batch, tile, center, markerDetailSize, markerAlpha, viewingCiv)
             }
             drawCityMarker(
                 batch = batch,
                 tile = tile,
                 center = center,
-                detailSize = detailSize,
+                detailSize = markerDetailSize,
                 alpha = markerAlpha,
                 selectedCity = selectedCity
             )
@@ -707,7 +813,7 @@ class IcosaGlobeActor(
                 batch = batch,
                 tile = tile,
                 center = center,
-                detailSize = detailSize,
+                detailSize = markerDetailSize,
                 alpha = markerAlpha,
                 viewingCiv = viewingCiv,
                 selectedUnit = selectedUnit
@@ -1524,7 +1630,20 @@ class IcosaGlobeActor(
 
     private fun getCenterOverlayLocations(
         tile: Tile,
-        viewingCiv: com.unciv.logic.civilization.Civilization?
+        viewingCiv: Civilization?
+    ): List<GlobeCenterOverlayPolicy.Overlay> {
+        val index = tile.zeroBasedIndex
+        val signature = centerOverlaySignature(tile, viewingCiv)
+        val cached = centerOverlayCache[index]
+        if (cached != null && cached.signature == signature) return cached.overlays
+        val overlays = computeCenterOverlayLocations(tile, viewingCiv)
+        centerOverlayCache[index] = CenterOverlayCacheEntry(signature, overlays)
+        return overlays
+    }
+
+    private fun computeCenterOverlayLocations(
+        tile: Tile,
+        viewingCiv: Civilization?
     ): List<GlobeCenterOverlayPolicy.Overlay> {
         val shownImprovement = tile.getShownImprovement(viewingCiv)
         val borderOverlays = getBorderOverlayLocations(tile)
@@ -1564,6 +1683,16 @@ class IcosaGlobeActor(
 
     private fun getBorderOverlayLocations(tile: Tile): List<String> {
         if (!tile.hasTileMap()) return emptyList()
+        val index = tile.zeroBasedIndex
+        val signature = borderOverlaySignature(tile)
+        val cached = borderOverlayCache[index]
+        if (cached != null && cached.signature == signature) return cached.locations
+        val locations = computeBorderOverlayLocations(tile)
+        borderOverlayCache[index] = BorderOverlayCacheEntry(signature, locations)
+        return locations
+    }
+
+    private fun computeBorderOverlayLocations(tile: Tile): List<String> {
         val neighborContexts = tile.neighbors.asSequence().map { neighbor ->
             val clockPosition = tile.tileMap.getNeighborTileClockPosition(tile, neighbor)
             GlobeTileOverlayResolver.NeighborEdgeContext(
@@ -1585,6 +1714,41 @@ class IcosaGlobeActor(
             bottomRiverLocation = tileSetStrings.bottomRiver,
             bottomLeftRiverLocation = tileSetStrings.bottomLeftRiver
         )
+    }
+
+    private fun borderOverlaySignature(tile: Tile): Int {
+        if (!tile.hasTileMap()) return 0
+        var hash = 17
+        hash = 31 * hash + tile.cachedTerrainData.terrainNameSet.hashCode()
+        hash = 31 * hash + tile.getBaseTerrain().type.name.hashCode()
+        hash = 31 * hash + if (tile.hasBottomRightRiver) 1 else 0
+        hash = 31 * hash + if (tile.hasBottomRiver) 1 else 0
+        hash = 31 * hash + if (tile.hasBottomLeftRiver) 1 else 0
+        for (neighbor in tile.neighbors) {
+            hash = 31 * hash + neighbor.zeroBasedIndex
+            hash = 31 * hash + neighbor.cachedTerrainData.terrainNameSet.hashCode()
+            hash = 31 * hash + neighbor.getBaseTerrain().type.name.hashCode()
+        }
+        return hash
+    }
+
+    private fun centerOverlaySignature(tile: Tile, viewingCiv: Civilization?): Int {
+        val shownImprovement = tile.getShownImprovement(viewingCiv)
+        val canSeeResource = viewingCiv == null || viewingCiv.canSeeResource(tile.tileResource)
+        var hash = borderOverlaySignature(tile)
+        hash = 31 * hash + tile.baseTerrain.hashCode()
+        hash = 31 * hash + tile.terrainFeatures.hashCode()
+        hash = 31 * hash + (tile.naturalWonder?.hashCode() ?: 0)
+        hash = 31 * hash + (shownImprovement?.hashCode() ?: 0)
+        hash = 31 * hash + (tile.resource?.hashCode() ?: 0)
+        hash = 31 * hash + tile.resourceAmount
+        hash = 31 * hash + if (tile.improvementIsPillaged) 1 else 0
+        hash = 31 * hash + (viewingCiv?.civID?.hashCode() ?: 0)
+        hash = 31 * hash + if (canSeeResource) 1 else 0
+        hash = 31 * hash + if (UncivGame.Current.settings.showPixelImprovements) 1 else 0
+        hash = 31 * hash + if (tileSetStrings.tileSetConfig.useColorAsBaseTerrain) 1 else 0
+        hash = 31 * hash + if (tileSetStrings.tileSetConfig.useSummaryImages) 1 else 0
+        return hash
     }
 
     private fun resolveDirectionalBaseRotation(
@@ -1628,7 +1792,11 @@ class IcosaGlobeActor(
     }
 
     private fun getTerrainDetailLocations(tile: Tile): List<String> {
-        return GlobeTerrainDetailResolver.resolveLocations(
+        val index = tile.zeroBasedIndex
+        val signature = terrainDetailSignature(tile)
+        val cached = terrainDetailCache[index]
+        if (cached != null && cached.signature == signature) return cached.locations
+        val locations = GlobeTerrainDetailResolver.resolveLocations(
             baseTerrain = tile.baseTerrain,
             terrainFeatures = tile.terrainFeatures,
             naturalWonder = tile.naturalWonder,
@@ -1636,6 +1804,30 @@ class IcosaGlobeActor(
             orFallback = { key -> tileSetStrings.orFallback { getTile(key) } },
             imageExists = { path -> ImageGetter.imageExists(path) }
         )
+        terrainDetailCache[index] = TerrainDetailCacheEntry(signature, locations)
+        return locations
+    }
+
+    private fun terrainDetailSignature(tile: Tile): Int {
+        var hash = 17
+        hash = 31 * hash + tile.baseTerrain.hashCode()
+        hash = 31 * hash + tile.terrainFeatures.hashCode()
+        hash = 31 * hash + (tile.naturalWonder?.hashCode() ?: 0)
+        return hash
+    }
+
+    private fun getOwnershipBorderSegments(tile: Tile): List<OwnershipBorderSegmentResolver.Segment> {
+        val index = tile.zeroBasedIndex
+        val signature = ownershipSegmentsSignature(tile)
+        val cached = ownershipSegmentsCache[index]
+        if (cached != null && cached.signature == signature) return cached.segments
+        val segments = OwnershipBorderSegmentResolver.resolve(tile)
+        ownershipSegmentsCache[index] = OwnershipSegmentsCacheEntry(signature, segments)
+        return segments
+    }
+
+    private fun ownershipSegmentsSignature(tile: Tile): Int {
+        return GlobeOwnershipSegmentCachePolicy.signature(tile)
     }
 
     private fun projectToStage(world: Vector3, out: Vector2): Vector2 {
