@@ -6,6 +6,7 @@ from typing import List
 
 LAND_BASE_TERRAINS = {"Desert", "Plains", "Grassland", "Tundra", "Snow", "Mountain"}
 WATER_BASE_TERRAINS = {"Ocean", "Coast", "Lakes"}
+SEA_ICE_TEMPERATURE_THRESHOLD_C = -1.5
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class ClimateSample:
     temperature_c: float | None
     annual_precip_mm: float | None
     elevation_m: float | None
+    coldest_temperature_c: float | None = None
 
 
 def classify_base_terrain(sample: ClimateSample) -> str:
@@ -49,7 +51,10 @@ def classify_features(sample: ClimateSample, base_terrain: str) -> List[str]:
     elev = sample.elevation_m if sample.elevation_m is not None else 0.0
 
     if base_terrain in WATER_BASE_TERRAINS:
-        if base_terrain != "Lakes" and (abs(sample.latitude) >= 72 or temp <= -6):
+        water_temp = sample.coldest_temperature_c
+        if water_temp is None:
+            water_temp = sample.temperature_c if sample.temperature_c is not None else _default_ocean_temperature(sample.latitude)
+        if base_terrain != "Lakes" and (abs(sample.latitude) >= 72 or water_temp <= SEA_ICE_TEMPERATURE_THRESHOLD_C):
             features.append("Ice")
         return features
 
@@ -78,6 +83,12 @@ def classify_features(sample: ClimateSample, base_terrain: str) -> List[str]:
 def _default_temperature(latitude: float) -> float:
     # Smooth fallback when climate raster is unavailable.
     return 30.0 - abs(latitude) * 0.65
+
+
+def _default_ocean_temperature(latitude: float) -> float:
+    # Conservative fallback for water when marine climatology is unavailable.
+    # This reaches the sea-ice threshold only near the explicit latitude gate.
+    return 12.0 - abs(latitude) * 0.1875
 
 
 def _default_precip(latitude: float) -> float:

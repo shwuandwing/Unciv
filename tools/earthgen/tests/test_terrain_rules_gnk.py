@@ -26,6 +26,9 @@ class TerrainRuleTests(unittest.TestCase):
             (ClimateSample(True, False, 34.0, 10.0, 1100.0, 3500.0), "Mountain", []),
             (ClimateSample(False, True, 10.0, 20.0, 1200.0, 0.0), "Lakes", []),
             (ClimateSample(False, False, 75.0, -8.0, 200.0, 0.0), "Ocean", ["Ice"]),
+            (ClimateSample(False, False, 55.5, None, 200.0, 0.0), "Ocean", []),
+            (ClimateSample(False, False, 55.5, 11.0, 200.0, 0.0, coldest_temperature_c=7.0), "Ocean", []),
+            (ClimateSample(False, False, 69.5, 0.5, 200.0, 0.0, coldest_temperature_c=-1.6), "Ocean", ["Ice"]),
         ]
         for sample, expected_base, expected_features in cases:
             with self.subTest(sample=sample):
@@ -64,6 +67,12 @@ class TerrainRuleTests(unittest.TestCase):
 
             def sample_temperature(self, lon: float, lat: float) -> float:
                 return 26.0 - abs(lat) * 0.3
+
+            def sample_ocean_temperature(self, lon: float, lat: float) -> float:
+                return 8.0 - abs(lat) * 0.05
+
+            def sample_ocean_coldest_month_temperature(self, lon: float, lat: float) -> float:
+                return 5.0 - abs(lat) * 0.1
 
             def sample_precipitation(self, lon: float, lat: float) -> float:
                 return 1200.0 if lon > 0 else 400.0

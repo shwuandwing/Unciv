@@ -256,7 +256,12 @@ def classify_tiles(
         on_land = datasets.point_on_land(sample_lon, sample_lat)
         in_lake = datasets.point_in_lake(sample_lon, sample_lat)
 
-        temperature = datasets.sample_temperature(sample_lon, sample_lat)
+        if on_land or in_lake:
+            temperature = datasets.sample_temperature(sample_lon, sample_lat)
+            coldest_temperature = None
+        else:
+            temperature = datasets.sample_ocean_temperature(sample_lon, sample_lat)
+            coldest_temperature = datasets.sample_ocean_coldest_month_temperature(sample_lon, sample_lat)
         precipitation = datasets.sample_precipitation(sample_lon, sample_lat)
         elevation = datasets.sample_elevation(sample_lon, sample_lat)
 
@@ -267,6 +272,7 @@ def classify_tiles(
             temperature_c=temperature,
             annual_precip_mm=precipitation,
             elevation_m=elevation,
+            coldest_temperature_c=coldest_temperature,
         )
 
         base = classify_base_terrain(climate)

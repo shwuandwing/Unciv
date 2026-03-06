@@ -5,7 +5,7 @@ import json
 import logging
 import math
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
@@ -126,20 +126,108 @@ class GeoRaster:
         elif row >= self.height:
             row = self.height - 1
 
-        value = float(self.data[row, col])
-        if not math.isfinite(value):
+        return _normalize_sampled_value(self.data[row, col], self.nodata)
+
+
+@dataclass
+class LatLonRaster:
+    data: np.ndarray
+    nodata: float | None
+    width: int
+    height: int
+    lon_start: float
+    lon_step: float
+    lat_start: float
+    lat_step: float
+    _nearest_valid_cache: dict[tuple[int, int], float | None] = field(default_factory=dict, init=False, repr=False)
+
+    def sample(self, lon: float, lat: float) -> float | None:
+        if self.lon_step == 0.0 or self.lat_step == 0.0:
             return None
-        # WorldClim rasters often use extreme sentinels (~-3.4e38) for nodata.
-        if abs(value) > 1e20:
-            return None
-        # Some rasters are stored as int16 with nodata=-32768 (or similar negative sentinels).
-        if value <= WORLDCLIM_INT16_NODATA_CUTOFF:
-            return None
-        if any(math.isclose(value, nodata, rel_tol=0.0, abs_tol=1e-6) for nodata in KNOWN_NODATA_SENTINELS):
-            return None
-        if self.nodata is not None and math.isclose(value, self.nodata, rel_tol=0.0, abs_tol=1e-6):
-            return None
-        return value
+
+        if 0.0 <= self.lon_start < 360.0:
+            lon = lon % 360.0
+            if lon < self.lon_start:
+                lon += 360.0
+        else:
+            lon = wrap_longitude(lon)
+
+        col = int(round((lon - self.lon_start) / self.lon_step))
+        row = int(round((lat - self.lat_start) / self.lat_step))
+
+        if col < 0:
+            col = 0
+        elif col >= self.width:
+            col = self.width - 1
+
+        if row < 0:
+            row = 0
+        elif row >= self.height:
+            row = self.height - 1
+
+        value = _normalize_sampled_value(self.data[row, col], self.nodata)
+        if value is not None:
+            return value
+
+        cache_key = (row, col)
+        if cache_key not in self._nearest_valid_cache:
+            self._nearest_valid_cache[cache_key] = self._nearest_valid_sample(row, col)
+        return self._nearest_valid_cache[cache_key]
+
+    def _nearest_valid_sample(self, row: int, col: int) -> float | None:
+        wraps_longitude = self._wraps_longitude()
+        max_radius = max(self.height, self.width)
+        for radius in range(1, max_radius + 1):
+            best_value: float | None = None
+            best_distance_sq: int | None = None
+            for dr in range(-radius, radius + 1):
+                for dc in range(-radius, radius + 1):
+                    if max(abs(dr), abs(dc)) != radius:
+                        continue
+                    rr = row + dr
+                    if rr < 0 or rr >= self.height:
+                        continue
+
+                    cc = col + dc
+                    if wraps_longitude:
+                        cc %= self.width
+                    elif cc < 0 or cc >= self.width:
+                        continue
+
+                    value = _normalize_sampled_value(self.data[rr, cc], self.nodata)
+                    if value is None:
+                        continue
+
+                    distance_sq = dr * dr + dc * dc
+                    if best_distance_sq is None or distance_sq < best_distance_sq:
+                        best_distance_sq = distance_sq
+                        best_value = value
+            if best_value is not None:
+                return best_value
+        return None
+
+    def _wraps_longitude(self) -> bool:
+        lon_span = abs(self.lon_step) * self.width
+        return 0.0 <= self.lon_start < 360.0 and lon_span >= 359.0
+
+
+def _normalize_sampled_value(value: object, nodata: float | None) -> float | None:
+    if np.ma.is_masked(value):
+        return None
+    value = float(value)
+    if not math.isfinite(value):
+        return None
+    # WorldClim rasters often use extreme sentinels (~-3.4e38) for nodata.
+    if abs(value) > 1e20:
+        return None
+    # Some rasters are stored as int16 with nodata=-32768 (or similar negative sentinels).
+    if value <= WORLDCLIM_INT16_NODATA_CUTOFF:
+        return None
+    if any(math.isclose(value, nodata_candidate, rel_tol=0.0, abs_tol=1e-6) for nodata_candidate in KNOWN_NODATA_SENTINELS):
+        return None
+    if nodata is not None and math.isclose(value, nodata, rel_tol=0.0, abs_tol=1e-6):
+        return None
+    return value
 
 
 @dataclass
@@ -150,6 +238,7 @@ class EarthDatasets:
     elevation: GeoRaster
     monthly_temperature: List[GeoRaster]
     monthly_precipitation: List[GeoRaster]
+    monthly_sea_surface_temperature: List[LatLonRaster] = field(default_factory=list)
 
     def point_on_land(self, lon: float, lat: float) -> bool:
         lon = wrap_longitude(lon)
@@ -176,6 +265,20 @@ class EarthDatasets:
             return None
         return float(sum(valid))
 
+    def sample_ocean_temperature(self, lon: float, lat: float) -> float | None:
+        values = [r.sample(lon, lat) for r in self.monthly_sea_surface_temperature]
+        valid = [v for v in values if v is not None]
+        if not valid:
+            return None
+        return float(sum(valid) / len(valid))
+
+    def sample_ocean_coldest_month_temperature(self, lon: float, lat: float) -> float | None:
+        values = [r.sample(lon, lat) for r in self.monthly_sea_surface_temperature]
+        valid = [v for v in values if v is not None]
+        if not valid:
+            return None
+        return float(min(valid))
+
 
 def load_earth_datasets(cache_dir: Path) -> EarthDatasets:
     land = _load_polygons(cache_dir / "ne_110m_land.json")
@@ -185,6 +288,8 @@ def load_earth_datasets(cache_dir: Path) -> EarthDatasets:
     elev = _load_single_raster_from_zip(cache_dir / "wc2.1_10m_elev.zip", suffix=".tif")
     tavg = _load_rasters_from_zip(cache_dir / "wc2.1_10m_tavg.zip", prefix="wc2.1_10m_tavg_", suffix=".tif")
     prec = _load_rasters_from_zip(cache_dir / "wc2.1_10m_prec.zip", prefix="wc2.1_10m_prec_", suffix=".tif")
+    sst_path = cache_dir / "ersst.v5_sst.mon.ltm.1991-2020.nc"
+    sst = _load_monthly_latlon_rasters_from_netcdf(sst_path, variable_name="sst") if sst_path.exists() else []
 
     return EarthDatasets(
         land_polygons=land,
@@ -193,6 +298,7 @@ def load_earth_datasets(cache_dir: Path) -> EarthDatasets:
         elevation=elev,
         monthly_temperature=tavg,
         monthly_precipitation=prec,
+        monthly_sea_surface_temperature=sst,
     )
 
 
@@ -237,6 +343,59 @@ def _load_rasters_from_zip(zip_path: Path, prefix: str, suffix: str) -> List[Geo
         for name in names:
             rasters.append(GeoRaster.from_tiff_bytes(zf.read(name)))
     return rasters
+
+
+def _load_monthly_latlon_rasters_from_netcdf(path: Path, variable_name: str) -> List[LatLonRaster]:
+    from netCDF4 import Dataset
+
+    if not path.exists():
+        raise FileNotFoundError(f"Missing NetCDF archive: {path}")
+
+    with Dataset(path) as ds:
+        if variable_name not in ds.variables:
+            raise ValueError(f"Variable '{variable_name}' missing from {path}")
+
+        variable = ds.variables[variable_name]
+        lon = np.asarray(ds.variables["lon"][:], dtype=np.float64)
+        lat = np.asarray(ds.variables["lat"][:], dtype=np.float64)
+        if variable.ndim != 3:
+            raise ValueError(f"Expected 3D monthly variable for {variable_name} in {path}, got ndim={variable.ndim}")
+        if len(lon) < 2 or len(lat) < 2:
+            raise ValueError(f"Expected regular lon/lat axes in {path}")
+
+        lon_step = _axis_step(lon, "lon", path)
+        lat_step = _axis_step(lat, "lat", path)
+        nodata_attr = getattr(variable, "_FillValue", None)
+        if nodata_attr is None:
+            nodata_attr = getattr(variable, "missing_value", None)
+        nodata = float(nodata_attr) if nodata_attr is not None else None
+
+        rasters: List[LatLonRaster] = []
+        for month_index in range(variable.shape[0]):
+            monthly_data = variable[month_index]
+            if np.ma.isMaskedArray(monthly_data):
+                monthly_data = monthly_data.filled(np.nan)
+            monthly_array = np.asarray(monthly_data, dtype=np.float32)
+            rasters.append(
+                LatLonRaster(
+                    data=monthly_array,
+                    nodata=nodata,
+                    width=monthly_array.shape[1],
+                    height=monthly_array.shape[0],
+                    lon_start=float(lon[0]),
+                    lon_step=lon_step,
+                    lat_start=float(lat[0]),
+                    lat_step=lat_step,
+                )
+            )
+        return rasters
+
+
+def _axis_step(values: np.ndarray, axis_name: str, path: Path) -> float:
+    deltas = np.diff(values)
+    if not np.allclose(deltas, deltas[0], atol=1e-6):
+        raise ValueError(f"Axis '{axis_name}' is not regularly spaced in {path}")
+    return float(deltas[0])
 
 
 def _load_polygons(path: Path) -> List[PolygonShape]:
