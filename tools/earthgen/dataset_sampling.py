@@ -34,8 +34,17 @@ class PolygonShape:
     min_lat: float
     max_lat: float
     center_lon: float
+    polar_projection: str | None = None
+    projected_rings: Tuple[Tuple[Tuple[float, float], ...], ...] | None = None
+    projected_min_x: float | None = None
+    projected_max_x: float | None = None
+    projected_min_y: float | None = None
+    projected_max_y: float | None = None
 
     def contains(self, lon: float, lat: float) -> bool:
+        if self.polar_projection is not None and self.projected_rings is not None:
+            return self._contains_polar(lon, lat)
+
         if lat < self.min_lat or lat > self.max_lat:
             return False
         # Rings are stored in unwrapped longitude space; shift point into same longitude band.
@@ -47,6 +56,27 @@ class PolygonShape:
             return False
         for hole in self.rings[1:]:
             if _point_in_ring(lon, lat, hole):
+                return False
+        return True
+
+    def _contains_polar(self, lon: float, lat: float) -> bool:
+        assert self.projected_rings is not None
+        assert self.projected_min_x is not None
+        assert self.projected_max_x is not None
+        assert self.projected_min_y is not None
+        assert self.projected_max_y is not None
+
+        x, y = _polar_project(lon, lat, self.polar_projection)
+        if x < self.projected_min_x or x > self.projected_max_x:
+            return False
+        if y < self.projected_min_y or y > self.projected_max_y:
+            return False
+
+        outer = self.projected_rings[0]
+        if not _point_in_ring(x, y, outer):
+            return False
+        for hole in self.projected_rings[1:]:
+            if _point_in_ring(x, y, hole):
                 return False
         return True
 
@@ -67,6 +97,17 @@ def _point_in_ring(lon: float, lat: float, ring: Sequence[Tuple[float, float]]) 
                 inside = not inside
         j = i
     return inside
+
+
+def _polar_project(lon: float, lat: float, pole: str | None) -> Tuple[float, float]:
+    if pole == "north":
+        radius = 90.0 - lat
+    elif pole == "south":
+        radius = 90.0 + lat
+    else:
+        raise ValueError(f"Unsupported polar projection: {pole}")
+    lon_rad = math.radians(lon)
+    return radius * math.sin(lon_rad), radius * math.cos(lon_rad)
 
 
 @dataclass
@@ -421,6 +462,7 @@ def _load_polygons(path: Path) -> List[PolygonShape]:
 
 def _polygon_shape_from_coords(coords: Sequence[Sequence[Sequence[float]]]) -> PolygonShape | None:
     rings: List[Tuple[Tuple[float, float], ...]] = []
+    normalized_rings: List[Tuple[Tuple[float, float], ...]] = []
     lons: List[float] = []
     lats: List[float] = []
 
@@ -432,12 +474,26 @@ def _polygon_shape_from_coords(coords: Sequence[Sequence[Sequence[float]]]) -> P
             normalized.append((lon, lat))
             lats.append(lat)
         if len(normalized) >= 3:
+            normalized_rings.append(tuple(normalized))
             unwrapped = _unwrap_ring(normalized)
             rings.append(tuple(unwrapped))
             lons.extend([lon for lon, _ in unwrapped])
 
     if not rings:
         return None
+
+    polar_projection = _detect_polar_projection(lats)
+    projected_rings: Tuple[Tuple[Tuple[float, float], ...], ...] | None = None
+    projected_xs: List[float] = []
+    projected_ys: List[float] = []
+    if polar_projection is not None:
+        projected: List[Tuple[Tuple[float, float], ...]] = []
+        for ring in normalized_rings:
+            projected_ring = tuple(_polar_project(lon, lat, polar_projection) for lon, lat in ring)
+            projected.append(projected_ring)
+            projected_xs.extend([x for x, _ in projected_ring])
+            projected_ys.extend([y for _, y in projected_ring])
+        projected_rings = tuple(projected)
 
     return PolygonShape(
         rings=tuple(rings),
@@ -446,7 +502,21 @@ def _polygon_shape_from_coords(coords: Sequence[Sequence[Sequence[float]]]) -> P
         min_lat=min(lats),
         max_lat=max(lats),
         center_lon=(min(lons) + max(lons)) / 2.0,
+        polar_projection=polar_projection,
+        projected_rings=projected_rings,
+        projected_min_x=min(projected_xs) if projected_xs else None,
+        projected_max_x=max(projected_xs) if projected_xs else None,
+        projected_min_y=min(projected_ys) if projected_ys else None,
+        projected_max_y=max(projected_ys) if projected_ys else None,
     )
+
+
+def _detect_polar_projection(lats: Sequence[float]) -> str | None:
+    if min(lats) <= -89.999:
+        return "south"
+    if max(lats) >= 89.999:
+        return "north"
+    return None
 
 
 def _unwrap_ring(points: Sequence[Tuple[float, float]]) -> List[Tuple[float, float]]:
