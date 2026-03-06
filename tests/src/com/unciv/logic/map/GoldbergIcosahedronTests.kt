@@ -1,6 +1,7 @@
 package com.unciv.logic.map
 
 import com.unciv.logic.civilization.Civilization
+import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.map.mapgenerator.GoldbergMapBuilder
 import com.unciv.logic.map.tile.Tile
 import com.unciv.testing.GdxTestRunner
@@ -87,6 +88,32 @@ class GoldbergIcosahedronTests {
         unit.currentMovement = 10f
         unit.movement.moveToTile(to)
         Assert.assertEquals(to, unit.getTile())
+    }
+
+    @Test
+    fun routeNodeParentRoundTripsAcrossSeamEdges() {
+        val (from, to) = findSeamEdge(tileMap)
+        val node = RouteNode(
+            from,
+            RelationshipLevel.Favorable,
+            FixedPointMovement.FPM_ZERO,
+            FixedPointMovement.FPM_ZERO,
+            1,
+            to,
+            0,
+        )
+
+        Assert.assertEquals(to, node.parentTile(tileMap))
+    }
+
+    @Test
+    fun pathingMapCrossesSeamEdges() {
+        val (from, to) = findSeamEdge(tileMap)
+        val unit = testGame.addUnit("Warrior", civInfo, from)
+
+        val path = PathingMap.createUnitPathingMap(unit).getShortestPath(to)
+
+        Assert.assertEquals(listOf(to), path)
     }
 
     @Test

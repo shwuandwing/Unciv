@@ -68,10 +68,9 @@ import java.util.Locale
  *   with a maximum value of 819.15 movement used (25.55*64). This takes 14 bits. This is ONLY
  *   used by PrioritizedNode. This is never zero, which guarantees that an initialized 
  *   PrioritizedNode is never zero... except for the start node in one edge case.
- * - parentClockDir: The clock-direction index (2-12) of the parent tile, relative to this tile. We
- *   use 14 to represent "no parent tile" (such as for the root node). Since the values are always
- *   even, we do not store the last bit, so this only takes 3 bits. This is never zero, which 
- *   guarantees that an initialized RouteNode is never zero.
+ * - parentNeighborSlot: The 1-based slot of the parent tile in this tile's topology neighbor order.
+ *   We use 7 to represent "no parent tile" (such as for the root node). This only takes 3 bits.
+ *   This is never zero, which guarantees that an initialized RouteNode is never zero.
  * - padding: In a RouteNode, the other remaining 12 bits of underestimatedTotal just hold zeroes, 
  *   for now.
  * - damagingTiles: How many tiles that cause end-turn damage have been crossed to reach this tile.
@@ -104,7 +103,7 @@ value class RouteNode(val bits: Long=0L) {
                 toPbmMoveThisTurnBits(pauseBeforeMountainMove) or
                 toMoveThisTurnBits(moveThisTurn) or
                 toTurnsBits(turns) or
-                toParentClockDirBits(tile, parentTile) or
+                toParentNeighborSlotBits(tile, parentTile) or
                 toDamagingTilesBits(damagingTiles)
         ) {
         require(tile.zeroBasedIndex < tile.tileMap.tileList.size) { "tileList ${tile.zeroBasedIndex} exceeds max ${tile.tileMap.tileList.size}" }
@@ -115,7 +114,7 @@ value class RouteNode(val bits: Long=0L) {
         require(moveThisTurn <= MAX_MOVE_THIS_TURN) { "moveThisTurn $moveThisTurn exceeds max $MAX_MOVE_THIS_TURN" }
         require(turns >= 0) { "turns $turns must be positive" }
         require(turns <= MAX_TURNS) { "turns $turns exceeds max $MAX_TURNS" }
-        require(toParentClockDirBits(tile, parentTile) > 0) {"parentClockDir $parentClockDir must be positive"}
+        require(toParentNeighborSlotBits(tile, parentTile) > 0) { "parentNeighborSlot $parentNeighborSlot must be positive" }
         require(damagingTiles >= 0) { "damagingTiles $damagingTiles must be positive" }
         require(damagingTiles <= DAMAGE_TILES_LO_MASK) { "damagingTiles $moveThisTurn exceeds max $DAMAGE_TILES_LO_MASK" }
     }
@@ -142,17 +141,17 @@ value class RouteNode(val bits: Long=0L) {
 
     val turns: Int get() { require(initialized); return ((bits shr TURNS_OFFSET) and TURNS_LO_MASK).toInt() }
 
-    val parentClockDir: Int get() { require(initialized); return (((bits shr PARENT_TILE_OFFSET) and PARENT_TILE_LO_MASK)*2).toInt() }
+    val parentNeighborSlot: Int get() { require(initialized); return ((bits shr PARENT_TILE_OFFSET) and PARENT_TILE_LO_MASK).toInt() }
     @Readonly
     fun parentTile(tileMap: TileMap): Tile {
-        val idx = parentClockDir
-        if (idx == NO_PARENT_TILE_VALUE) return tile(tileMap)
-        return tileMap.getClockPositionNeighborTile(tile(tileMap), idx)!!
+        val slot = parentNeighborSlot
+        if (slot == NO_PARENT_TILE_SLOT) return tile(tileMap)
+        return tile(tileMap).neighbors.elementAt(slot - 1)
     }
 
     val damagingTiles: Int get() { require(initialized); return ((bits shr DAMAGE_TILES_OFFSET) and DAMAGE_TILES_LO_MASK).toInt() }
 
-    // parentClockDir can never be 0, so all zeroes means uninitialized
+    // parentNeighborSlot can never be 0, so all zeroes means uninitialized
     val initialized: Boolean get() = bits != 0L
 
     val isNoPathingNode: Boolean get() = pbmMoveThisTurn.bits == PBM_MOVE_THIS_TURN_LO_MASK.toInt()
@@ -197,12 +196,12 @@ value class RouteNode(val bits: Long=0L) {
         internal const val UNDERESTIMATED_TOTAL_LO_MASK = (0x1L shl  UNDERESTIMATED_TOTAL_BIT_COUNT) - 1L
         internal const val UNDERESTIMATED_TOTAL_HI_MASK = UNDERESTIMATED_TOTAL_LO_MASK shl UNDERESTIMATED_TOTAL_OFFSET
         internal val MAX_UNDERESTIMATED_TOTAL = FixedPointMovement.fpmFromFixedPointBits(UNDERESTIMATED_TOTAL_LO_MASK.toInt())
-        // [RouteNode] bits 47-49 (3b = 8values > 6neighbors +1self) are the parent tile clock direction/2+1.  no-Parent is "7", and "0" is never valid
+        // [RouteNode] bits 47-49 (3b = 8values > 6neighbors +1self) are the 1-based parent neighbor slot. no-Parent is "7", and "0" is never valid.
         private const val PARENT_TILE_OFFSET = UNDERESTIMATED_TOTAL_OFFSET
         private const val PARENT_TILE_BIT_COUNT = 3
         private const val PARENT_TILE_LO_MASK = (0x1L shl PARENT_TILE_BIT_COUNT) - 1L
         private const val NO_PARENT_TILE_BITS = 7L
-        private const val NO_PARENT_TILE_VALUE = 14
+        private const val NO_PARENT_TILE_SLOT = 7
         // [RouteNode] bits 50-60 (11b) are padding bits, only used by PrioritizedNode's underestimatedTotal field
         // bits 61-62 (2b = 4turns) are the number of turns ended in damaging tiles.
         private const val DAMAGE_TILES_OFFSET = UNDERESTIMATED_TOTAL_OFFSET + UNDERESTIMATED_TOTAL_BIT_COUNT
@@ -212,8 +211,10 @@ value class RouteNode(val bits: Long=0L) {
 
 
         @Readonly
-        private fun toParentClockDirBits(tile: Tile, parentTile: Tile): Long
-            = (if (tile == parentTile) NO_PARENT_TILE_BITS else tile.tileMap.getNeighborTileClockPosition(tile, parentTile)/2L) shl PARENT_TILE_OFFSET
+        private fun toParentNeighborSlotBits(tile: Tile, parentTile: Tile): Long {
+            val slot = if (tile == parentTile) NO_PARENT_TILE_BITS else tile.neighbors.indexOfFirst { it == parentTile }.toLong() + 1L
+            return slot shl PARENT_TILE_OFFSET
+        }
         @Pure
         private fun toMoveThisTurnBits(moveThisTurn: FixedPointMovement): Long
             = moveThisTurn.bits.toLong() shl MOVE_THIS_TURN_OFFSET

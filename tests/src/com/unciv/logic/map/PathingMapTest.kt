@@ -65,7 +65,7 @@ class PathingMapTest {
 
         assertEquals(tile.zeroBasedIndex, node.tileIdx)
         assertEquals(tile, node.tile(testGame.tileMap))
-        assertEquals(12, node.parentClockDir)
+        assertEquals(tile.neighbors.indexOfFirst { it == parentTile } + 1, node.parentNeighborSlot)
         assertEquals(parentTile, node.parentTile(testGame.tileMap))
         assertEquals(moveThisTurn, node.moveUsedThisTurn)
         assertEquals(pbmMoveThisTurn, node.pbmMoveThisTurn)
