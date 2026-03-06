@@ -214,6 +214,33 @@ class DatasetSamplingTests(unittest.TestCase):
         self.assertTrue(shape.contains(-179.0, 0.0))
         self.assertFalse(shape.contains(0.0, 0.0))
 
+    def test_polygon_contains_handles_south_pole_cap(self) -> None:
+        # Synthetic Antarctica-style polygon: a polar cap bounded by latitude -70 with
+        # explicit pole vertices on the antimeridian. The planar lon/lat test fails on
+        # this shape because the ring crosses the south-pole singularity.
+        shape = _polygon_shape_from_coords(
+            [
+                [
+                    [-180.0, -70.0],
+                    [-120.0, -70.0],
+                    [-60.0, -70.0],
+                    [0.0, -70.0],
+                    [60.0, -70.0],
+                    [120.0, -70.0],
+                    [180.0, -70.0],
+                    [180.0, -90.0],
+                    [-180.0, -90.0],
+                    [-180.0, -70.0],
+                ]
+            ]
+        )
+        assert shape is not None
+
+        self.assertTrue(shape.contains(0.0, -80.0))
+        self.assertTrue(shape.contains(90.0, -80.0))
+        self.assertTrue(shape.contains(-90.0, -80.0))
+        self.assertFalse(shape.contains(0.0, -60.0))
+
 
 if __name__ == "__main__":
     unittest.main()
