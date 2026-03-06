@@ -31,8 +31,16 @@ Fetched by `tools/earthgen/fetch_datasets.py`:
 - WorldClim 2.1 (10m) elevation
 - WorldClim 2.1 (10m) monthly mean temperature
 - WorldClim 2.1 (10m) monthly precipitation
+- NOAA ERSST v5 monthly sea surface temperature climatology (`1991-2020`)
 
 Datasets are cached under `tools/earthgen/cache/` and tracked by checksum in `manifest.json`.
+
+Marine climate behavior:
+
+- Land tiles use WorldClim air temperature.
+- Ocean/coast tiles use ERSST monthly SST when available.
+- Ocean `Ice` classification uses the coldest monthly SST sample plus the explicit polar latitude gate.
+- If marine SST is missing from cache, water tiles fall back to a conservative ocean-temperature curve instead of the land fallback.
 
 ## Setup
 
@@ -188,6 +196,8 @@ Current suite validates:
   - Align `--size`/`--frequency` with the topology file frequency.
 - Missing Python deps (`numpy`, `tifffile`, etc.):
   - Install from `tools/earthgen/requirements.txt` inside `.venv-earthgen`.
+- Water tiles freezing too aggressively in subpolar oceans:
+  - Re-run `tools/earthgen/fetch_datasets.py` so `ersst.v5_sst.mon.ltm.1991-2020.nc` exists in `tools/earthgen/cache/`.
 - Map not visible in game:
   - Confirm output path is under `android/assets/maps/` or imported into user map directory.
 - Ocean tiles unexpectedly becoming land/desert near map seams:

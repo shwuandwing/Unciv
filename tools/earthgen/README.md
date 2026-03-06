@@ -45,6 +45,12 @@ tools/earthgen/.venv/bin/python tools/earthgen/generate_unciv_earth_map.py \
 - `--disable-resource <name>` (repeatable)
 - `--resource-fairness` / `--no-resource-fairness` (default: disabled)
 
+## Climate Inputs
+
+- Land temperature and precipitation come from WorldClim monthly climatology.
+- Ocean tiles use NOAA ERSST v5 monthly sea-surface temperature climatology when available.
+- If the marine SST dataset is missing from `tools/earthgen/cache/`, water tiles fall back to a conservative latitude-only ocean temperature model instead of the land-temperature fallback.
+
 Orientation defaults (current):
 
 - `--pole-alignment topology`

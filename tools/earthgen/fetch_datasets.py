@@ -51,6 +51,11 @@ DEFAULT_DATASETS: Dict[str, Dict[str, str]] = {
         "filename": "wc2.1_10m_prec.zip",
         "description": "WorldClim 2.1 monthly precipitation raster (10m)",
     },
+    "sst_ersst_v5_1991_2020": {
+        "url": "https://psl.noaa.gov/thredds/fileServer/Datasets/noaa.ersst.v5/sst.mon.ltm.1991-2020.nc",
+        "filename": "ersst.v5_sst.mon.ltm.1991-2020.nc",
+        "description": "NOAA ERSST v5 monthly sea surface temperature climatology (1991-2020)",
+    },
     "geography_regions_polys": {
         "url": "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_geography_regions_polys.json",
         "filename": "ne_110m_geography_regions_polys.json",
